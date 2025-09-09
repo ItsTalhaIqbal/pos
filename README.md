@@ -2,6 +2,9 @@
 
 A complete restaurant management system built with Next.js, featuring POS, order management, customer management, and analytics. Designed to work offline with local or cloud MongoDB storage.
 
+## Demo
+[Live Demo](https://arham-restaurant.vercel.app/)
+
 ## Features
 
 ✨ **Point of Sale (POS) System**
