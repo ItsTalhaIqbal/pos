@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -27,6 +27,8 @@ export default function MenuPage() {
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
@@ -40,48 +42,76 @@ export default function MenuPage() {
     tags: ''
   })
 
+  const activeRequests = useRef(0)
+  const categoriesReq = useRef(0)
+  const itemsReq = useRef(0)
+
+  const beginRequest = () => {
+    activeRequests.current += 1
+    setLoading(true)
+  }
+  const endRequest = () => {
+    activeRequests.current = Math.max(0, activeRequests.current - 1)
+    if (activeRequests.current === 0) setLoading(false)
+  }
+
   useEffect(() => {
-    fetchCategories()
-    fetchItems()
+    const c1 = new AbortController()
+    const c2 = new AbortController()
+    fetchCategories(c1.signal)
+    fetchItems(c2.signal)
+    return () => { c1.abort(); c2.abort() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // debounce search input
   useEffect(() => {
-    fetchItems()
-  }, [selectedCategory, searchTerm])
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 300)
+    return () => clearTimeout(t)
+  }, [searchTerm])
 
-  const fetchCategories = async () => {
+  useEffect(() => {
+    const c = new AbortController()
+    fetchItems(c.signal)
+    return () => c.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory, debouncedSearch])
+
+  const fetchCategories = async (signal) => {
+    const thisId = ++categoriesReq.current
+    beginRequest()
     try {
-      const response = await fetch('/api/categories?activeOnly=true')
+      const response = await fetch('/api/categories?activeOnly=true', { signal })
       const data = await response.json()
-      if (data.categories) {
-        setCategories(data.categories)
-      }
+      if (thisId !== categoriesReq.current) return
+      if (data.categories) setCategories(data.categories)
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching categories:', error)
+    } finally {
+      endRequest()
     }
   }
 
-  const fetchItems = async () => {
-    setLoading(true)
+  const fetchItems = async (signal) => {
+    const thisId = ++itemsReq.current
+    beginRequest()
     try {
       const params = new URLSearchParams()
-      if (selectedCategory !== 'all') {
-        params.append('categoryId', selectedCategory)
-      }
-      if (searchTerm) {
-        params.append('search', searchTerm)
-      }
+      if (selectedCategory !== 'all') params.append('categoryId', selectedCategory)
+      if (debouncedSearch) params.append('search', debouncedSearch)
 
-      const response = await fetch(`/api/items?${params}`)
+      const response = await fetch(`/api/items?${params}`, { signal })
       const data = await response.json()
-      if (data.items) {
-        setItems(data.items)
-      }
+      if (thisId !== itemsReq.current) return
+      if (data.items) setItems(data.items)
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching items:', error)
     } finally {
-      setLoading(false)
+      endRequest()
     }
+    return
   }
 
   const handleSubmit = async (e) => {
@@ -204,8 +234,8 @@ export default function MenuPage() {
           <h1 className="text-3xl font-bold tracking-tight">Menu Management</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={fetchItems} variant="outline" disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Button onClick={async () => { setIsRefreshing(true); await fetchItems(); setIsRefreshing(false); }} variant="outline" disabled={loading || isRefreshing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

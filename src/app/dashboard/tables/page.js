@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,22 +33,29 @@ export default function TablesPage() {
     notes: ''
   })
 
+  const fetchCounter = useRef(0)
+
   useEffect(() => {
-    fetchTables()
+    const c = new AbortController()
+    fetchTables(c.signal)
+    return () => c.abort()
   }, [])
 
-  const fetchTables = async () => {
+  const fetchTables = async (signal) => {
     setLoading(true)
+    const thisId = ++fetchCounter.current
     try {
-      const response = await fetch('/api/tables')
+      const response = await fetch('/api/tables', signal ? { signal } : undefined)
       const data = await response.json()
+      if (thisId !== fetchCounter.current) return
       if (data.tables) {
         setTables(data.tables)
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching tables:', error)
     } finally {
-      setLoading(false)
+      if (thisId === fetchCounter.current) setLoading(false)
     }
   }
 

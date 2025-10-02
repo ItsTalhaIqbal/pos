@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -28,42 +28,52 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState([])
   const [loading, setLoading] = useState(true)
 
+  const activeRequests = useRef(0)
+  const fetchReq = useRef(0)
+
+  const beginRequest = () => { activeRequests.current += 1; setLoading(true) }
+  const endRequest = () => { activeRequests.current = Math.max(0, activeRequests.current - 1); if (activeRequests.current === 0) setLoading(false) }
+
   useEffect(() => {
-    fetchDashboardData()
+    const controller = new AbortController()
+    fetchDashboardData(controller.signal)
+    return () => controller.abort()
   }, [])
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (signal) => {
+    const thisId = ++fetchReq.current
+    beginRequest()
     try {
-      // Fetch today's orders
-      const ordersResponse = await fetch('/api/orders')
+      const ordersResponse = await fetch('/api/orders', { signal })
       const ordersData = await ordersResponse.json()
-      
-      // Fetch tables data
-      const tablesResponse = await fetch('/api/tables')
+
+      const tablesResponse = await fetch('/api/tables', { signal })
       const tablesData = await tablesResponse.json()
-      
+
+      if (thisId !== fetchReq.current) return
+
       if (ordersData.orders) {
         const orders = ordersData.orders
         const revenue = orders.reduce((sum, order) => sum + order.total, 0)
         const avgValue = orders.length > 0 ? revenue / orders.length : 0
-        
-        // Count active tables (occupied or reserved)
+
         const activeTables = tablesData.tables ? 
           tablesData.tables.filter(table => table.status === 'occupied' || table.status === 'reserved').length : 0
-        
+
         setStats({
           todayRevenue: revenue,
           todayOrders: orders.length,
           activeTables: activeTables,
           avgOrderValue: avgValue
         })
-        
+
         setRecentOrders(orders.slice(0, 5))
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching dashboard data:', error)
     } finally {
-      setLoading(false)
+      endRequest()
     }
   }
 

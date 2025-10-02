@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,22 +28,31 @@ export default function CategoriesPage() {
     sortOrder: 0
   })
 
+  const activeRequests = useRef(0)
+  const fetchReq = useRef(0)
+
+  const beginRequest = () => { activeRequests.current += 1; setLoading(true) }
+  const endRequest = () => { activeRequests.current = Math.max(0, activeRequests.current - 1); if (activeRequests.current === 0) setLoading(false) }
+
   useEffect(() => {
-    fetchCategories()
+    const c = new AbortController()
+    fetchCategories(c.signal)
+    return () => c.abort()
   }, [])
 
-  const fetchCategories = async () => {
-    setLoading(true)
+  const fetchCategories = async (signal) => {
+    const thisId = ++fetchReq.current
+    beginRequest()
     try {
-      const response = await fetch('/api/categories')
+      const response = await fetch('/api/categories', { signal })
       const data = await response.json()
-      if (data.categories) {
-        setCategories(data.categories)
-      }
+      if (thisId !== fetchReq.current) return
+      if (data.categories) setCategories(data.categories)
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching categories:', error)
     } finally {
-      setLoading(false)
+      endRequest()
     }
   }
 

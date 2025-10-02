@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import printReceipt from '@/lib/print-receipt'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -34,32 +35,65 @@ export default function POSPage() {
   const [selectedTable, setSelectedTable] = useState('')
   const [orderType, setOrderType] = useState('dine-in')
   const [paymentMethod, setPaymentMethod] = useState('cash')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const activeRequests = useRef(0)
+
+  const beginRequest = () => {
+    activeRequests.current += 1
+    setLoading(true)
+  }
+
+  const endRequest = () => {
+    activeRequests.current = Math.max(0, activeRequests.current - 1)
+    if (activeRequests.current === 0) setLoading(false)
+  }
   const [showCheckout, setShowCheckout] = useState(false)
 
+  const categoriesReq = useRef(0)
+  const itemsReq = useRef(0)
+  const tablesReq = useRef(0)
+
   useEffect(() => {
-    fetchCategories()
-    fetchItems()
-    fetchTables()
+    const c1 = new AbortController()
+    const c2 = new AbortController()
+    const c3 = new AbortController()
+    fetchCategories(c1.signal)
+    fetchItems(c2.signal)
+    fetchTables(c3.signal)
+    return () => {
+      c1.abort(); c2.abort(); c3.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    fetchItems()
+    const c = new AbortController()
+    fetchItems(c.signal)
+    return () => c.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCategory, searchTerm])
 
-  const fetchCategories = async () => {
+  const fetchCategories = async (signal) => {
+    const thisId = ++categoriesReq.current
+    beginRequest()
     try {
-      const response = await fetch('/api/categories?activeOnly=true')
+      const response = await fetch('/api/categories?activeOnly=true', { signal })
       const data = await response.json()
+      if (thisId !== categoriesReq.current) return
       if (data.categories) {
         setCategories(data.categories)
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching categories:', error)
+    } finally {
+      endRequest()
     }
   }
 
-  const fetchItems = async () => {
+  const fetchItems = async (signal) => {
+    const thisId = ++itemsReq.current
+    beginRequest()
     try {
       const params = new URLSearchParams()
       if (selectedCategory !== 'all') {
@@ -69,25 +103,35 @@ export default function POSPage() {
         params.append('search', searchTerm)
       }
 
-      const response = await fetch(`/api/items?${params}`)
+      const response = await fetch(`/api/items?${params}`, { signal })
       const data = await response.json()
+      if (thisId !== itemsReq.current) return
       if (data.items) {
         setItems(data.items)
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching items:', error)
+    } finally {
+      endRequest()
     }
   }
 
-  const fetchTables = async () => {
+  const fetchTables = async (signal) => {
+    const thisId = ++tablesReq.current
+    beginRequest()
     try {
-      const response = await fetch('/api/tables')
+      const response = await fetch('/api/tables', { signal })
       const data = await response.json()
+      if (thisId !== tablesReq.current) return
       if (data.tables) {
         setTables(data.tables)
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching tables:', error)
+    } finally {
+      endRequest()
     }
   }
 
@@ -143,7 +187,16 @@ export default function POSPage() {
     setSelectedTable('')
   }
 
-  const submitOrder = async () => {
+  const handlePrint = (order = {}) => {
+    try {
+      printReceipt(order, { paperWidthMm: 80, brand: { name: "Crunchy Bites", address: "Karachi", phone: "0327-1234567" } })
+    } catch (err) {
+      console.error('Print failed', err)
+    }
+  }
+
+  const submitOrder = async (e) => {
+    e.preventDefault()
     if (cart.length === 0) {
       alert('Cart is empty')
       return
@@ -160,8 +213,7 @@ export default function POSPage() {
       return
     }
 
-    setLoading(true)
-
+  beginRequest()
     try {
       const subtotal = calculateSubtotal()
       const tax = calculateTax(subtotal)
@@ -197,7 +249,9 @@ export default function POSPage() {
 
       if (response.ok) {
         const newOrder = await response.json()
-        
+        // Print receipt (support both { order } shape and direct order)
+        const created = newOrder?.order ?? newOrder
+        handlePrint(created)
         // Update table status to occupied if it's a dine-in order
         if (orderType === 'dine-in' && selectedTable) {
           await fetch(`/api/tables/${selectedTable}`, {
@@ -207,14 +261,13 @@ export default function POSPage() {
             },
             body: JSON.stringify({
               status: 'occupied',
-              currentOrderId: newOrder.order._id
+              currentOrderId: created._id
             }),
           })
           // Refresh tables list
-          fetchTables()
+          fetchTables()          
         }
         
-        alert(`Order ${newOrder.orderNumber} created successfully!`)
         clearCart()
         setShowCheckout(false)
       } else {
@@ -224,7 +277,7 @@ export default function POSPage() {
       console.error('Error creating order:', error)
       alert('Failed to create order. Please try again.')
     } finally {
-      setLoading(false)
+      endRequest()
     }
   }
 

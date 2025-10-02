@@ -15,12 +15,24 @@ import { Computer } from "lucide-react"
 
 export function ModeToggle() {
   const { setTheme, theme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" className="flex items-center space-x-2 justify-center">
-            {theme === "light" ? (
+            {/* Only read `theme` after mounting to avoid hydration mismatch */}
+            {!mounted ? (
+              // Placeholder during SSR / before hydration
+              <>
+                <Sun className="h-[1.2rem] w-[1.2rem]" />
+                <span className="">..</span>
+              </>
+            ) : theme === "light" ? (
               <>
                 <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all" />
                 <span className="">{theme ? <span className="">{theme.toUpperCase()}</span> : "LIGHT"}</span>

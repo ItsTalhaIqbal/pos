@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -37,11 +37,19 @@ export default function ReportsPage() {
     orderTypes: {}
   })
 
+  const activeRequests = useRef(0)
+  const reportReq = useRef(0)
+
   useEffect(() => {
-    generateReport()
+    const controller = new AbortController()
+    generateReport(controller.signal)
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endDate])
 
-  const generateReport = async () => {
+  const generateReport = async (signal) => {
+    const thisId = ++reportReq.current
+    activeRequests.current += 1
     setLoading(true)
     try {
       // Fetch orders for the date range
@@ -51,12 +59,14 @@ export default function ReportsPage() {
       while (currentDate <= endDate) {
         const dateStr = format(currentDate, 'yyyy-MM-dd')
         promises.push(
-          fetch(`/api/orders?date=${dateStr}`).then(res => res.json())
+          fetch(`/api/orders?date=${dateStr}`, { signal }).then(res => res.json())
         )
         currentDate.setDate(currentDate.getDate() + 1)
       }
 
       const results = await Promise.all(promises)
+      // If a newer generateReport started, ignore this result
+      if (thisId !== reportReq.current) return
       const allOrders = results.flatMap(result => result.orders || [])
 
       // Calculate metrics
@@ -136,9 +146,11 @@ export default function ReportsPage() {
       })
 
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error generating report:', error)
     } finally {
-      setLoading(false)
+      activeRequests.current = Math.max(0, activeRequests.current - 1)
+      if (activeRequests.current === 0 && thisId === reportReq.current) setLoading(false)
     }
   }
 

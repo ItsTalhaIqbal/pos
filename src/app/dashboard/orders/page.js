@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { OrdersSkeleton } from "@/components/skeletons/OrdersSkeleton"
 import { format } from "date-fns"
 import { CalendarIcon, Search, Filter, RefreshCw } from "lucide-react"
+import OrderDetails from '@/components/ui/order-details'
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([])
@@ -21,12 +22,22 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
 
+  const fetchCounter = useRef(0)
+  const activeRequests = useRef(0)
+
   useEffect(() => {
-    fetchOrders()
+    const controller = new AbortController()
+    fetchOrders(controller.signal)
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, statusFilter])
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (signal) => {
+    // increment active requests and ensure loading is true
+    activeRequests.current += 1
     setLoading(true)
+    const thisRequestId = ++fetchCounter.current
+
     try {
       const params = new URLSearchParams()
       if (selectedDate) {
@@ -36,16 +47,22 @@ export default function OrdersPage() {
         params.append('status', statusFilter)
       }
 
-      const response = await fetch(`/api/orders?${params}`)
+      const response = await fetch(`/api/orders?${params}`, signal ? { signal } : undefined)
       const data = await response.json()
-      
+
+      // Ignore if a newer request started after this one
+      if (thisRequestId !== fetchCounter.current) return
+
       if (data.orders) {
         setOrders(data.orders)
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('Error fetching orders:', error)
     } finally {
-      setLoading(false)
+      // decrement active requests; only clear loading when none are left
+      activeRequests.current = Math.max(0, activeRequests.current - 1)
+      if (activeRequests.current === 0 && thisRequestId === fetchCounter.current) setLoading(false)
     }
   }
 
@@ -102,7 +119,7 @@ export default function OrdersPage() {
           <SidebarTrigger />
           <h1 className="text-3xl font-bold tracking-tight">Orders</h1>
         </div>
-        <Button onClick={fetchOrders} disabled={loading}>
+        <Button onClick={() => fetchOrders()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -270,9 +287,7 @@ export default function OrdersPage() {
                       {format(new Date(order.createdAt), "HH:mm")}
                     </TableCell>
                     <TableCell>
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
+                      <OrderDetails order={order} />
                     </TableCell>
                   </TableRow>
                 ))}

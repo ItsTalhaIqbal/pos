@@ -1,34 +1,34 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function Home() {
   const router = useRouter()
   const [checking, setChecking] = useState(true)
 
-  useEffect(() => {
-    checkSetup()
-  }, [])
+  const checkReq = useRef(0)
 
-  const checkSetup = async () => {
-    try {
-      // Check if we have any categories (indicating setup is done)
-      const response = await fetch('/api/categories')
-      const data = await response.json()
-      
-      if (data.categories && data.categories.length > 0) {
-        router.push('/dashboard')
-      } else {
+  useEffect(() => {
+    const controller = new AbortController()
+    const run = async () => {
+      const thisId = ++checkReq.current
+      try {
+        const response = await fetch('/api/categories', { signal: controller.signal })
+        const data = await response.json()
+        if (thisId !== checkReq.current) return
+        if (data.categories && data.categories.length > 0) router.push('/dashboard')
+        else router.push('/setup')
+      } catch (error) {
+        if (error.name === 'AbortError') return
         router.push('/setup')
+      } finally {
+        if (thisId === checkReq.current) setChecking(false)
       }
-    } catch (error) {
-      // If there's an error, go to setup page
-      router.push('/setup')
-    } finally {
-      setChecking(false)
     }
-  }
+    run()
+    return () => controller.abort()
+  }, [router])
 
   if (checking) {
     return (
