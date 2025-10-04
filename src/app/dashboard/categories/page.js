@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Plus, Search, Edit, Trash2, ChefHat, Grid3X3, Move } from 'lucide-react'
 import CategoriesSkeleton from '@/components/skeletons/CategoriesSkeleton'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([])
@@ -162,11 +163,14 @@ export default function CategoriesPage() {
   ]
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Categories</h1>
+      <div className="flex justify-between items-center flex-wrap gap-y-5">
+        <div className=''>
+          <div className="flex items-center gap-4 mb-1">
+            <SidebarTrigger />
+            <h1 className="text-3xl font-bold tracking-tight">Categories</h1>
+          </div>
           <p className="text-muted-foreground">
             Manage your menu categories to organize items effectively
           </p>

@@ -28,6 +28,7 @@ export default function POSPage() {
   const [tables, setTables] = useState([])
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [cart, setCart] = useState([])
   const [customerName, setCustomerName] = useState('walk-in-customer')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -52,7 +53,9 @@ export default function POSPage() {
   const categoriesReq = useRef(0)
   const itemsReq = useRef(0)
   const tablesReq = useRef(0)
+  const isInitialMount = useRef(true)
 
+  // Initial load
   useEffect(() => {
     const c1 = new AbortController()
     const c2 = new AbortController()
@@ -60,18 +63,27 @@ export default function POSPage() {
     fetchCategories(c1.signal)
     fetchItems(c2.signal)
     fetchTables(c3.signal)
+    isInitialMount.current = false
     return () => {
       c1.abort(); c2.abort(); c3.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Debounce search input
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 500)
+    return () => clearTimeout(t)
+  }, [searchTerm])
+
+  // Fetch items when filters change (but not on initial mount)
+  useEffect(() => {
+    if (isInitialMount.current) return
     const c = new AbortController()
     fetchItems(c.signal)
     return () => c.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory, searchTerm])
+  }, [selectedCategory, debouncedSearch])
 
   const fetchCategories = async (signal) => {
     const thisId = ++categoriesReq.current
@@ -99,8 +111,8 @@ export default function POSPage() {
       if (selectedCategory !== 'all') {
         params.append('categoryId', selectedCategory)
       }
-      if (searchTerm) {
-        params.append('search', searchTerm)
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch)
       }
 
       const response = await fetch(`/api/items?${params}`, { signal })
@@ -289,7 +301,7 @@ export default function POSPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-y-5">
         <div className="flex items-center gap-4">
           <SidebarTrigger />
           <h1 className="text-3xl font-bold tracking-tight">Point of Sale</h1>
@@ -303,7 +315,7 @@ export default function POSPage() {
             <DialogTrigger asChild>
               <Button disabled={cart.length === 0}>
                 <Receipt className="h-4 w-4 mr-2" />
-                Checkout (Rs {calculateTotal().toFixed(2)})
+                Checkout (PKR {calculateTotal().toFixed(2)})
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl">
@@ -401,8 +413,8 @@ export default function POSPage() {
                         <TableRow key={item._id}>
                           <TableCell>{item.name}</TableCell>
                           <TableCell>{item.quantity}</TableCell>
-                          <TableCell>Rs {item.price.toFixed(2)}</TableCell>
-                          <TableCell>Rs {(item.price * item.quantity).toFixed(2)}</TableCell>
+                          <TableCell>PKR {item.price.toFixed(2)}</TableCell>
+                          <TableCell>PKR {(item.price * item.quantity).toFixed(2)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -411,15 +423,15 @@ export default function POSPage() {
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>Rs {calculateSubtotal().toFixed(2)}</span>
+                      <span>PKR {calculateSubtotal().toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tax (0%):</span>
-                      <span>Rs {calculateTax(calculateSubtotal()).toFixed(2)}</span>
+                      <span>PKR {calculateTax(calculateSubtotal()).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-lg">
                       <span>Total:</span>
-                      <span>Rs {calculateTotal().toFixed(2)}</span>
+                      <span>PKR {calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -434,7 +446,6 @@ export default function POSPage() {
                     <SelectContent>
                       <SelectItem value="cash">Cash</SelectItem>
                       <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="upi">UPI</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -456,12 +467,12 @@ export default function POSPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Menu Items */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className=" lg:col-span-2 space-y-4">
           {/* Filters */}
           <Card>
             <CardContent className="pt-6">
-              <div className="flex gap-4">
-                <div className="flex-1">
+              <div className="flex flex-wrap gap-4 justify-between">
+                <div className="">
                   <div className="relative">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -473,7 +484,7 @@ export default function POSPage() {
                   </div>
                 </div>
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="min-w-[180px]">
                     <SelectValue placeholder="All Categories" />
                   </SelectTrigger>
                   <SelectContent>
@@ -505,7 +516,7 @@ export default function POSPage() {
                       <p className="text-sm text-muted-foreground">{item.description}</p>
                     )}
                     <div className="flex justify-between items-center">
-                      <span className="text-lg font-bold">Rs {item.price.toFixed(2)}</span>
+                      <span className="text-lg font-bold">PKR {item.price.toFixed(2)}</span>
                       <Button onClick={() => addToCart(item)} size="sm">
                         <Plus className="h-4 w-4 mr-1" />
                         Add
@@ -543,7 +554,7 @@ export default function POSPage() {
                     <div key={item._id} className="flex items-center justify-between p-2 border rounded">
                       <div className="flex-1">
                         <h4 className="font-medium">{item.name}</h4>
-                        <p className="text-sm text-muted-foreground">Rs {item.price.toFixed(2)} each</p>
+                        <p className="text-sm text-muted-foreground">PKR {item.price.toFixed(2)} each</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button 
@@ -575,15 +586,15 @@ export default function POSPage() {
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>Rs {calculateSubtotal().toFixed(2)}</span>
+                      <span>PKR {calculateSubtotal().toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tax (0%):</span>
-                      <span>Rs {calculateTax(calculateSubtotal()).toFixed(2)}</span>
+                      <span>PKR {calculateTax(calculateSubtotal()).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-lg">
                       <span>Total:</span>
-                      <span>Rs {calculateTotal().toFixed(2)}</span>
+                      <span>PKR {calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
 

@@ -101,4 +101,4 @@ On first visit, you'll be redirected to the setup page. Click "Setup Sample Data
 - Toggle item availability
 - Set prices and preparation times
 
-Built with Pakistani Restaurant owners in mind - all prices in Pakistani Rupees (Rs).
+Built with Pakistani Restaurant owners in mind - all prices in Pakistani Rupees (PKR).

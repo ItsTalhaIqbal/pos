@@ -132,7 +132,7 @@ export default function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Rs {stats.todayRevenue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">PKR {stats.todayRevenue.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">
               +{stats.todayOrders} orders today
             </p>
@@ -171,7 +171,7 @@ export default function DashboardPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Rs {stats.avgOrderValue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">PKR {stats.avgOrderValue.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">
               Per order average
             </p>
@@ -209,7 +209,7 @@ export default function DashboardPage() {
                     <Badge className={getStatusColor(order.status)}>
                       {order.status}
                     </Badge>
-                    <span className="font-medium">Rs {order.total.toFixed(2)}</span>
+                    <span className="font-medium">PKR {order.total.toFixed(2)}</span>
                   </div>
                 </div>
               ))}

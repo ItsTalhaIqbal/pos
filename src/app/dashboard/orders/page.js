@@ -21,6 +21,7 @@ export default function OrdersPage() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [statusFilter, setStatusFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
 
   const fetchCounter = useRef(0)
   const activeRequests = useRef(0)
@@ -31,6 +32,12 @@ export default function OrdersPage() {
     return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, statusFilter])
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 500)
+    return () => clearTimeout(t)
+  }, [searchTerm])
 
   const fetchOrders = async (signal) => {
     // increment active requests and ensure loading is true
@@ -104,8 +111,8 @@ export default function OrdersPage() {
   }
 
   const filteredOrders = orders.filter(order =>
-    order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    order.customerName.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    order.orderNumber.toLowerCase().includes(debouncedSearch.toLowerCase())
   )
 
   if (loading) {
@@ -261,7 +268,7 @@ export default function OrdersPage() {
                       )}
                     </TableCell>
                     <TableCell className="font-medium">
-                      Rs {order.total.toFixed(2)}
+                      PKR {order.total.toFixed(2)}
                     </TableCell>
                     <TableCell>
                       <Select

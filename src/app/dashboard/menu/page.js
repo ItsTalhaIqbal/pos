@@ -45,6 +45,7 @@ export default function MenuPage() {
   const activeRequests = useRef(0)
   const categoriesReq = useRef(0)
   const itemsReq = useRef(0)
+  const isInitialMount = useRef(true)
 
   const beginRequest = () => {
     activeRequests.current += 1
@@ -55,22 +56,26 @@ export default function MenuPage() {
     if (activeRequests.current === 0) setLoading(false)
   }
 
+  // Initial load
   useEffect(() => {
     const c1 = new AbortController()
     const c2 = new AbortController()
     fetchCategories(c1.signal)
     fetchItems(c2.signal)
+    isInitialMount.current = false
     return () => { c1.abort(); c2.abort() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // debounce search input
+  // Debounce search input
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchTerm), 300)
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 500)
     return () => clearTimeout(t)
   }, [searchTerm])
 
+  // Fetch items when filters change (but not on initial mount)
   useEffect(() => {
+    if (isInitialMount.current) return
     const c = new AbortController()
     fetchItems(c.signal)
     return () => c.abort()
@@ -228,7 +233,7 @@ export default function MenuPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-y-5">
         <div className="flex items-center gap-4">
           <SidebarTrigger />
           <h1 className="text-3xl font-bold tracking-tight">Menu Management</h1>
@@ -279,7 +284,7 @@ export default function MenuPage() {
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-sm font-medium">Price (Rs) *</label>
+                    <label className="text-sm font-medium">Price (PKR) *</label>
                     <Input
                       type="number"
                       step="0.01"
@@ -352,8 +357,8 @@ export default function MenuPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="flex gap-4">
-            <div className="flex-1">
+          <div className="flex gap-4 flex-wrap">
+            <div className="">
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -365,7 +370,7 @@ export default function MenuPage() {
               </div>
             </div>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="min-w-[180px]">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
@@ -432,7 +437,7 @@ export default function MenuPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium">
-                      Rs {item.price.toFixed(2)}
+                      PKR {item.price.toFixed(2)}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

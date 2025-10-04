@@ -160,19 +160,19 @@ CRUNCHY BITES - SALES REPORT
 Period: ${format(startDate, 'PP')} to ${format(endDate, 'PP')}
 
 SUMMARY:
-- Total Revenue: Rs ${reportData.totalRevenue.toFixed(2)}
+- Total Revenue: PKR ${reportData.totalRevenue.toFixed(2)}
 - Total Orders: ${reportData.totalOrders}
-- Average Order Value: Rs ${reportData.avgOrderValue.toFixed(2)}
+- Average Order Value: PKR ${reportData.avgOrderValue.toFixed(2)}
 - Table Turnover Rate: ${reportData.tableTurnover} per day
 
 TOP SELLING ITEMS:
 ${reportData.popularItems.map((item, index) => 
-  `${index + 1}. ${item.name} - ${item.quantity} sold - Rs ${item.revenue.toFixed(2)}`
+  `${index + 1}. ${item.name} - ${item.quantity} sold - PKR ${item.revenue.toFixed(2)}`
 ).join('\n')}
 
 DAILY SALES:
 ${reportData.dailySales.map(day => 
-  `${day.date}: ${day.orders} orders - Rs ${day.revenue.toFixed(2)}`
+  `${day.date}: ${day.orders} orders - PKR ${day.revenue.toFixed(2)}`
 ).join('\n')}
     `
 
@@ -193,7 +193,7 @@ ${reportData.dailySales.map(day =>
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-y-5">
         <div className="flex items-center gap-4">
           <SidebarTrigger />
           <h1 className="text-3xl font-bold tracking-tight">Reports & Analytics</h1>
@@ -216,9 +216,9 @@ ${reportData.dailySales.map(day =>
           <CardTitle>Report Period</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4 items-center">
-            <div>
-              <label className="text-sm font-medium">From</label>
+          <div className="flex gap-4 items-center flex-wrap">
+            <div className="items-center">
+              <label className="text-sm font-medium">From </label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
@@ -237,8 +237,8 @@ ${reportData.dailySales.map(day =>
               </Popover>
             </div>
             
-            <div>
-              <label className="text-sm font-medium">To</label>
+            <div className="items-center">
+              <label className="text-sm font-medium">To </label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
@@ -268,7 +268,7 @@ ${reportData.dailySales.map(day =>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Rs {reportData.totalRevenue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">PKR {reportData.totalRevenue.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">
               {reportData.dailySales.length} days period
             </p>
@@ -294,7 +294,7 @@ ${reportData.dailySales.map(day =>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Rs {reportData.avgOrderValue.toFixed(2)}</div>
+            <div className="text-2xl font-bold">PKR {reportData.avgOrderValue.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">
               Per order average
             </p>
@@ -315,7 +315,7 @@ ${reportData.dailySales.map(day =>
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2 max-md:grid-cols-1">
         {/* Top Selling Items */}
         <Card>
           <CardHeader>
@@ -349,7 +349,7 @@ ${reportData.dailySales.map(day =>
                       </TableCell>
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell>{item.quantity}</TableCell>
-                      <TableCell>Rs {item.revenue.toFixed(2)}</TableCell>
+                      <TableCell>PKR {item.revenue.toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -359,7 +359,7 @@ ${reportData.dailySales.map(day =>
         </Card>
 
         {/* Daily Sales */}
-        <Card>
+        <Card className="">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
@@ -372,7 +372,7 @@ ${reportData.dailySales.map(day =>
             ) : reportData.dailySales.length === 0 ? (
               <div className="text-center py-4 text-muted-foreground">No data available</div>
             ) : (
-              <Table>
+              <Table className="">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
@@ -385,7 +385,7 @@ ${reportData.dailySales.map(day =>
                     <TableRow key={day.date}>
                       <TableCell>{format(new Date(day.date), 'MMM dd')}</TableCell>
                       <TableCell>{day.orders}</TableCell>
-                      <TableCell>Rs {day.revenue.toFixed(2)}</TableCell>
+                      <TableCell>PKR {day.revenue.toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
