@@ -6,7 +6,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: "Crunchy Bites - Restaurant Management System",
+  title: "Burger Buddies",
   description: "Complete restaurant management system with POS, order management, and analytics",
 };
 
