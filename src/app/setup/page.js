@@ -43,7 +43,7 @@ export default function SetupPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <h1>
-        <Link href="/dashboard" className='text-black'>dashboard</Link>
+        <Link href="/dashboard" className='text-black text-2xl'>dashboard</Link>
       </h1>
     </div>
   )
