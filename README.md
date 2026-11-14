@@ -1,4 +1,4 @@
-# Crunchy Bites - Restaurant Management System
+# Burger Buddies - Restaurant Management System
 
 A complete restaurant management system built with Next.js, featuring POS, order management, customer management, and analytics. Designed to work offline with local or cloud MongoDB storage.
 

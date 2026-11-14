@@ -156,7 +156,7 @@ export default function ReportsPage() {
 
   const exportReport = () => {
     const reportContent = `
-CRUNCHY BITES - SALES REPORT
+Burger Buddies - SALES REPORT
 Period: ${format(startDate, 'PP')} to ${format(endDate, 'PP')}
 
 SUMMARY:

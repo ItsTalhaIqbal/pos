@@ -201,7 +201,7 @@ export default function POSPage() {
 
   const handlePrint = (order = {}) => {
     try {
-      printReceipt(order, { paperWidthMm: 80, brand: { name: "Crunchy Bites", address: "Karachi", phone: "0327-1234567" } })
+      printReceipt(order, { paperWidthMm: 80, brand: { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" } })
     } catch (err) {
       console.error('Print failed', err)
     }

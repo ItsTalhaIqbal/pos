@@ -26,7 +26,7 @@ The app follows the MVC pattern, adapted for Next.js with JavaScript, Shadcn UI 
 Database Setup:
 
 Connect to the local MongoDB instance (localhost:27017) using Mongoose.
-Create a database named “crunchy-bites” with collections for orders, items, categories, tables, customers, and employees.
+Create a database named “Burger Buddies” with collections for orders, items, categories, tables, customers, and employees.
 Define indexes on key fields (e.g., order date, customer name) for efficient queries.
 
 Order Model

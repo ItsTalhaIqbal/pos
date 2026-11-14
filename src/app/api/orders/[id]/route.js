@@ -32,11 +32,12 @@ export async function GET(request, { params }) {
 export async function PATCH(request, { params }) {
   try {
     await connectDB();
-    
+    const {id} = await params;
+    console.log('params.id:', id);
     const updateData = await request.json();
     
     // Find the current order to check table info before updating
-    const currentOrder = await Order.findById(params.id).populate('tableId');
+    const currentOrder = await Order.findById(id).populate('tableId');
     
     if (!currentOrder) {
       return NextResponse.json(
@@ -47,7 +48,7 @@ export async function PATCH(request, { params }) {
     
     // Update the order
     const order = await Order.findByIdAndUpdate(
-      params.id,
+      id,
       { 
         ...updateData,
         updatedAt: new Date()

@@ -1,4 +1,4 @@
-# Crunchy Bites - Production Deployment Guide
+# Burger Buddies - Production Deployment Guide
 
 Your restaurant POS application is now ready for production! Here are the deployment options:
 
@@ -36,7 +36,7 @@ Your restaurant POS application is now ready for production! Here are the deploy
 ## 🔧 Environment Variables Needed
 
 ```
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/crunchy-bites
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/BurgerBuddies
 ```
 
 ## 🌐 Database Options

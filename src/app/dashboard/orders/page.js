@@ -39,39 +39,36 @@ export default function OrdersPage() {
     return () => clearTimeout(t)
   }, [searchTerm])
 
-  const fetchOrders = async (signal) => {
-    // increment active requests and ensure loading is true
-    activeRequests.current += 1
-    setLoading(true)
-    const thisRequestId = ++fetchCounter.current
+const fetchOrders = async (signal) => {
+  const thisRequestId = ++fetchCounter.current
+  setLoading(true)
 
-    try {
-      const params = new URLSearchParams()
-      if (selectedDate) {
-        params.append('date', format(selectedDate, 'yyyy-MM-dd'))
-      }
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter)
-      }
-
-      const response = await fetch(`/api/orders?${params}`, signal ? { signal } : undefined)
-      const data = await response.json()
-
-      // Ignore if a newer request started after this one
-      if (thisRequestId !== fetchCounter.current) return
-
-      if (data.orders) {
-        setOrders(data.orders)
-      }
-    } catch (error) {
-      if (error.name === 'AbortError') return
-      console.error('Error fetching orders:', error)
-    } finally {
-      // decrement active requests; only clear loading when none are left
-      activeRequests.current = Math.max(0, activeRequests.current - 1)
-      if (activeRequests.current === 0 && thisRequestId === fetchCounter.current) setLoading(false)
+  try {
+    const params = new URLSearchParams()
+    if (selectedDate) {
+      params.append('date', format(selectedDate, 'yyyy-MM-dd'))
     }
+    if (statusFilter !== 'all') {
+      params.append('status', statusFilter)
+    }
+
+    const response = await fetch(`/api/orders`, signal ? { signal } : undefined)
+    const data = await response.json()
+ console.log(data)
+    // purani request ka result ignore karo
+    if (thisRequestId !== fetchCounter.current) return
+
+    if (data.orders) {
+      setOrders(data.orders)
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') return
+    console.error('Error fetching orders:', error)
+  } finally {
+    // sirf latest request loading band karegi
+    if (thisRequestId === fetchCounter.current) setLoading(false)
   }
+}
 
   const updateOrderStatus = async (orderId, newStatus) => {
     try {

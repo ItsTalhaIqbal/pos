@@ -25,7 +25,7 @@ const OrderDetailsContent = ({order = {}}) => {
 
   const handlePrint = (e) => {
     if (e && e.preventDefault) e.preventDefault()
-    printReceipt(order, { paperWidthMm: 80, brand: { name: "Crunchy Bites", address: "Karachi", phone: "0327-1234567" } })
+    printReceipt(order, { paperWidthMm: 80, brand: { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" } })
   }
   return (
     <DialogContent className="max-w-3xl">
