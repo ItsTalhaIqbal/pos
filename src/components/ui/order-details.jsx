@@ -23,9 +23,9 @@ function formatDate(date) {
 const OrderDetailsContent = ({order = {}}) => {
   const items = Array.isArray(order.items) ? order.items : []
 
-  const handlePrint = (e) => {
+  const handlePrint = (type) => (e) => {
     if (e && e.preventDefault) e.preventDefault()
-    printReceipt(order, { paperWidthMm: 80, brand: { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" } })
+    printReceipt(order, { type, paperWidthMm: 80, brand: { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" } })
   }
   return (
     <DialogContent className="max-w-3xl">
@@ -51,7 +51,7 @@ const OrderDetailsContent = ({order = {}}) => {
 
                 <div className="text-sm text-muted-foreground mt-4">Table / Phone</div>
                 <div className="flex gap-2 items-center">
-                  <div className="font-medium">{order.tableNumber ?? "—"}</div>
+                  <div className="font-medium">{order.tableId?.number ?? order.tableNumber ?? "—"}</div>
                   {order.customerPhone && <div className="text-sm text-muted-foreground">{order.customerPhone}</div>}
                 </div>
 
@@ -101,6 +101,7 @@ const OrderDetailsContent = ({order = {}}) => {
                               <TableRow key={it.itemId ?? it.id ?? idx}>
                                 <TableCell className="max-w-[30%] truncate">{it.name}</TableCell>
                                 <TableCell>{it.quantity}</TableCell>
+                                <TableCell>{formatCurrency(it.price ?? 0)}</TableCell>
                                 <TableCell>{formatCurrency((it.price ?? 0) * (it.quantity ?? 0))}</TableCell>
                               </TableRow>
                             ))}
@@ -111,8 +112,9 @@ const OrderDetailsContent = ({order = {}}) => {
           </CardContent>
 
           <CardFooter>
-                    <div className="w-full flex flex-col items-end">
-                      <Button variant="default" onClick={handlePrint}>Print</Button>
+                    <div className="w-full flex justify-end gap-2">
+                      <Button variant="outline" onClick={handlePrint('kitchen')}>Print Kitchen Slip</Button>
+                      <Button variant="default" onClick={handlePrint('customer')}>Print Customer Slip</Button>
                     </div>
           </CardFooter>
         </Card>

@@ -8,17 +8,21 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { OrdersSkeleton } from "@/components/skeletons/OrdersSkeleton"
 import { format } from "date-fns"
-import { CalendarIcon, Search, Filter, RefreshCw } from "lucide-react"
+import { Search, RefreshCw, ChefHat, Receipt } from "lucide-react"
 import OrderDetails from '@/components/ui/order-details'
+import printReceipt from '@/lib/print-receipt'
+import { useWorkPeriod } from '@/components/work-period'
+
+const BRAND = { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" }
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedDate, setSelectedDate] = useState(new Date())
+  const { workPeriod } = useWorkPeriod()
+  const [periods, setPeriods] = useState([])
+  const [selectedPeriod, setSelectedPeriod] = useState(null) // null = abhi load ho raha, 'none' = koi period nahi
   const [statusFilter, setStatusFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
@@ -26,12 +30,20 @@ export default function OrdersPage() {
   const fetchCounter = useRef(0)
   const activeRequests = useRef(0)
 
+  // Work periods ki list (start/end hone par dobara). Default: jo open hai, warna sab se latest.
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchPeriods(controller.signal)
+    return () => controller.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workPeriod?._id])
+
   useEffect(() => {
     const controller = new AbortController()
     fetchOrders(controller.signal)
     return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, statusFilter])
+  }, [selectedPeriod, statusFilter])
 
   // Debounce search input
   useEffect(() => {
@@ -39,36 +51,57 @@ export default function OrdersPage() {
     return () => clearTimeout(t)
   }, [searchTerm])
 
-const fetchOrders = async (signal) => {
-  const thisRequestId = ++fetchCounter.current
-  setLoading(true)
-
-  try {
-    const params = new URLSearchParams()
-    if (selectedDate) {
-      params.append('date', format(selectedDate, 'yyyy-MM-dd'))
+  const fetchPeriods = async (signal) => {
+    try {
+      const response = await fetch('/api/work-period?list=1&limit=30', { signal, cache: 'no-store' })
+      const data = await response.json()
+      const list = data.workPeriods ?? []
+      setPeriods(list)
+      setSelectedPeriod(workPeriod?._id ?? list[0]?._id ?? 'none')
+    } catch (error) {
+      if (error.name === 'AbortError') return
+      console.error('Error fetching work periods:', error)
     }
-    if (statusFilter !== 'all') {
-      params.append('status', statusFilter)
-    }
-
-    const response = await fetch(`/api/orders`, signal ? { signal } : undefined)
-    const data = await response.json()
- console.log(data)
-    // purani request ka result ignore karo
-    if (thisRequestId !== fetchCounter.current) return
-
-    if (data.orders) {
-      setOrders(data.orders)
-    }
-  } catch (error) {
-    if (error.name === 'AbortError') return
-    console.error('Error fetching orders:', error)
-  } finally {
-    // sirf latest request loading band karegi
-    if (thisRequestId === fetchCounter.current) setLoading(false)
   }
-}
+
+  const fetchOrders = async (signal) => {
+    if (!selectedPeriod) return // abhi periods load ho rahe hain
+    if (selectedPeriod === 'none') {
+      setOrders([])
+      setLoading(false)
+      return
+    }
+
+    const thisRequestId = ++fetchCounter.current
+    setLoading(true)
+
+    try {
+      const params = new URLSearchParams({ workPeriod: selectedPeriod, limit: '500' })
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter)
+      }
+
+      const response = await fetch(`/api/orders?${params}`, signal ? { signal } : undefined)
+      const data = await response.json()
+
+      // purani request ka result ignore karo
+      if (thisRequestId !== fetchCounter.current) return
+
+      if (data.orders) {
+        setOrders(data.orders)
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') return
+      console.error('Error fetching orders:', error)
+    } finally {
+      // sirf latest request loading band karegi
+      if (thisRequestId === fetchCounter.current) setLoading(false)
+    }
+  }
+
+  const handlePrint = (order, type) => {
+    printReceipt(order, { type, paperWidthMm: 80, brand: BRAND })
+  }
 
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
@@ -136,25 +169,25 @@ const fetchOrders = async (signal) => {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-4">
-            {/* Date Picker */}
+            {/* Work Period */}
             <div className="flex flex-col space-y-2">
-              <label className="text-sm font-medium">Date</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={setSelectedDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+              <label className="text-sm font-medium">Work Period</label>
+              <Select value={selectedPeriod ?? 'none'} onValueChange={setSelectedPeriod}>
+                <SelectTrigger className="w-[260px]">
+                  <SelectValue placeholder="Select work period" />
+                </SelectTrigger>
+                <SelectContent>
+                  {periods.length === 0 && (
+                    <SelectItem value="none" disabled>Koi work period nahi</SelectItem>
+                  )}
+                  {periods.map((p) => (
+                    <SelectItem key={p._id} value={p._id}>
+                      {format(new Date(p.startedAt), "dd MMM, hh:mm a")}
+                      {p.status === 'open' ? ' (Open)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Status Filter */}
@@ -203,7 +236,9 @@ const fetchOrders = async (signal) => {
         <CardContent>
           {filteredOrders.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No orders found for the selected criteria
+              {selectedPeriod === 'none'
+                ? 'Abhi tak koi work period start nahi hua'
+                : 'No orders found for the selected criteria'}
             </div>
           ) : (
             <Table>
@@ -291,7 +326,17 @@ const fetchOrders = async (signal) => {
                       {format(new Date(order.createdAt), "HH:mm")}
                     </TableCell>
                     <TableCell>
-                      <OrderDetails order={order} />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => handlePrint(order, 'kitchen')}>
+                          <ChefHat className="h-4 w-4 mr-1" />
+                          Kitchen
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handlePrint(order, 'customer')}>
+                          <Receipt className="h-4 w-4 mr-1" />
+                          Customer
+                        </Button>
+                        <OrderDetails order={order} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

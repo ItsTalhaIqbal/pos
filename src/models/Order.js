@@ -82,6 +82,11 @@ const OrderSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  workPeriod: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WorkPeriod',
+    required: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -97,5 +102,6 @@ const OrderSchema = new mongoose.Schema({
 // Index for efficient queries
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ status: 1 });
+OrderSchema.index({ workPeriod: 1, createdAt: -1 });
 
 export default mongoose.models.Order || mongoose.model('Order', OrderSchema);

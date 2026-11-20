@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import printReceipt from '@/lib/print-receipt'
+import { useWorkPeriod, StartWorkPeriodCard } from '@/components/work-period'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,7 +23,13 @@ import {
   Phone
 } from "lucide-react"
 
+// Order place hote hi kaunsi slips khud print hon.
+// Sirf kitchen: ['kitchen']  |  dono: ['kitchen', 'customer']
+const AUTO_PRINT_TYPES = ['kitchen']
+const BRAND = { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" }
+
 export default function POSPage() {
+  const { workPeriod, loading: workPeriodLoading, refresh: refreshWorkPeriod } = useWorkPeriod()
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
   const [tables, setTables] = useState([])
@@ -200,11 +207,16 @@ export default function POSPage() {
   }
 
   const handlePrint = (order = {}) => {
-    try {
-      printReceipt(order, { paperWidthMm: 80, brand: { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" } })
-    } catch (err) {
-      console.error('Print failed', err)
-    }
+    AUTO_PRINT_TYPES.forEach((type, index) => {
+      // ek se zyada slip ho to thora gap taake popups aapas me na takrayen
+      setTimeout(() => {
+        try {
+          printReceipt(order, { type, paperWidthMm: 80, brand: BRAND })
+        } catch (err) {
+          console.error('Print failed', err)
+        }
+      }, index * 800)
+    })
   }
 
   const submitOrder = async (e) => {
@@ -234,7 +246,7 @@ export default function POSPage() {
       const orderData = {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || null,
-        tableNumber: selectedTable ? parseInt(selectedTable) : null,
+        tableNumber: selectedTable ? (tables.find(t => t._id === selectedTable)?.number ?? null) : null,
         tableId: selectedTable || null,
         orderType,
         paymentMethod,
@@ -259,11 +271,20 @@ export default function POSPage() {
         body: JSON.stringify(orderData),
       })
 
+      if (response.status === 403) {
+        // work period band ho gaya (kisi aur device se end hua)
+        const err = await response.json().catch(() => ({}))
+        alert(err.error || 'Work period start nahi hai')
+        refreshWorkPeriod()
+        return
+      }
+
       if (response.ok) {
         const newOrder = await response.json()
-        // Print receipt (support both { order } shape and direct order)
+        // Kitchen slip auto print (support both { order } shape and direct order)
         const created = newOrder?.order ?? newOrder
         handlePrint(created)
+        refreshWorkPeriod() // top bar ke orders/sales update
         // Update table status to occupied if it's a dine-in order
         if (orderType === 'dine-in' && selectedTable) {
           await fetch(`/api/tables/${selectedTable}`, {
@@ -295,8 +316,21 @@ export default function POSPage() {
 
   const filteredItems = items
 
-  if (loading) {
+  if (loading || workPeriodLoading) {
     return <POSSkeleton />
+  }
+
+  // Work period open nahi to order punch nahi ho sakta
+  if (!workPeriod) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <SidebarTrigger />
+          <h1 className="text-3xl font-bold tracking-tight">Point of Sale</h1>
+        </div>
+        <StartWorkPeriodCard />
+      </div>
+    )
   }
 
   return (

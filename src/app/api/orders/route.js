@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import Order from '@/models/Order';
 import Table from '@/models/Table';
+import WorkPeriod from '@/models/WorkPeriod';
 
 export async function GET(request) {
   try {
@@ -10,17 +11,32 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
     const status = searchParams.get('status');
+    const workPeriodParam = searchParams.get('workPeriod');
     const page = parseInt(searchParams.get('page')) || 1;
     const limit = parseInt(searchParams.get('limit')) || 50;
 
     // Build query
     const query = {};
-    
-    if (date) {
+
+    if (workPeriodParam) {
+      // ?workPeriod=<id>  ya  ?workPeriod=current
+      if (workPeriodParam === 'current') {
+        const current = await WorkPeriod.findOne({ status: 'open' }).select('_id').lean();
+        if (!current) {
+          return NextResponse.json({
+            orders: [],
+            pagination: { page, limit, total: 0, pages: 0 }
+          });
+        }
+        query.workPeriod = current._id;
+      } else {
+        query.workPeriod = workPeriodParam;
+      }
+    } else if (date) {
       const startDate = new Date(date);
       const endDate = new Date(date);
       endDate.setDate(endDate.getDate() + 1);
-      
+
       query.createdAt = {
         $gte: startDate,
         $lt: endDate
@@ -31,7 +47,7 @@ export async function GET(request) {
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      
+
       query.createdAt = {
         $gte: today,
         $lt: tomorrow
@@ -42,13 +58,15 @@ export async function GET(request) {
       query.status = status;
     }
 
-    const orders = await Order.find(query)
-      .populate('tableId', 'number location')
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .skip((page - 1) * limit);
-
-    const total = await Order.countDocuments(query);
+    const [orders, total] = await Promise.all([
+      Order.find(query)
+        .populate('tableId', 'number location')
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip((page - 1) * limit)
+        .lean(),
+      Order.countDocuments(query)
+    ]);
 
     return NextResponse.json({
       orders,
@@ -73,6 +91,18 @@ export async function POST(request) {
   try {
     await connectDB();
 
+    // Work period open na ho to order punch nahi hoga
+    const workPeriod = await WorkPeriod.findOne({ status: 'open' }).select('_id').lean();
+    if (!workPeriod) {
+      return NextResponse.json(
+        {
+          error: 'Work period start nahi hai. Pehle work period start karo.',
+          code: 'NO_WORK_PERIOD'
+        },
+        { status: 403 }
+      );
+    }
+
     const orderData = await request.json();
 
     // Generate order number
@@ -81,7 +111,8 @@ export async function POST(request) {
 
     const order = new Order({
       ...orderData,
-      orderNumber
+      orderNumber,
+      workPeriod: workPeriod._id // client se aaya hua workPeriod hamesha override
     });
 
     await order.save();
