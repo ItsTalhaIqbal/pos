@@ -1,18 +1,16 @@
 /**
  * printReceipt(order, options)
- * Thermal printer (58mm / 80mm) ke liye slip banata hai aur print window khol kar print karta hai.
+ * Builds a slip for thermal printers (58mm / 80mm) and opens a print window.
  *
  * options:
  *  - type: 'customer' | 'kitchen'  (default 'customer')
- *      customer = prices + total wali slip
- *      kitchen  = sirf items/qty/notes (koi price nahi), bara font
  *  - paperWidthMm: 58 | 80 (default 80)
  *  - brand: { name, address, phone }
- *  - autoClose: boolean (print ke baad window band; default true)
- *  - scale: number (slip ka size; default 1.5, bara karna ho to 1.8 ya 2)
+ *  - logo: string (image path/url)  ← NEW
+ *  - autoClose: boolean (default true)
+ *  - scale: number (default 1.5)
  *
  * printWorkPeriodSummary(workPeriod, options)
- * Work period end hone par Z-report slip.
  */
 
 function escapeHtml(str) {
@@ -36,7 +34,6 @@ function fmtDate(d) {
   return dt.toLocaleString()
 }
 
-// Table number: populated tableId ko priority do, warna purana tableNumber
 function getTableNumber(order) {
   return order?.tableId?.number ?? order?.tableNumber ?? null
 }
@@ -53,11 +50,16 @@ function calcTotal(items, order) {
 }
 
 function getSizes(paperWidthMm, scale) {
-  const widthPx = paperWidthMm === 58 ? 232 : 320 // approximate px width at 96dpi
+  const widthPx = paperWidthMm === 58 ? 232 : 320
   return {
     bodyWidth: Math.round(widthPx * scale),
     fs: (n) => Math.round(n * scale)
   }
+}
+
+function cleanBrandName(name) {
+  if (!name) return ""
+  return String(name).replace(/\s*okara\s*/gi, " ").replace(/\s+/g, " ").trim()
 }
 
 function baseStyles({ paperWidthMm, bodyWidth, fs }) {
@@ -89,13 +91,7 @@ function baseStyles({ paperWidthMm, bodyWidth, fs }) {
     .small { font-size: ${fs(10)}px; line-height: 1.5 }
     .bold { font-weight: 700; font-size: ${fs(13)}px }
     .row { display: flex; justify-content: space-between }
-
-    /* kitchen slip */
-    .k-title { font-size: ${fs(18)}px; font-weight: 800; letter-spacing: 2px; margin: 2px 0 }
-    .k-order { font-size: ${fs(22)}px; font-weight: 800; margin: 2px 0 }
-    .k-type { font-size: ${fs(14)}px; font-weight: 700; text-transform: uppercase; margin: 2px 0 }
-    .k-items td { padding: 4px 0; vertical-align: top; font-size: ${fs(15)}px; font-weight: 700 }
-    .k-note { font-size: ${fs(11)}px; font-weight: 400; padding: 0 0 4px 18px !important }
+    .logo { display: block; margin: 0 auto ${fs(6)}px auto; max-width: ${fs(80)}px; max-height: ${fs(60)}px; object-fit: contain; }
   `
 }
 
@@ -111,7 +107,7 @@ function openPrintWindow(html, bodyWidth, autoClose) {
       })()
     </script>`
 
-  const printWindow = window.open("", "_blank", `width=${bodyWidth + 40},height=800`) // popup
+  const printWindow = window.open("", "_blank", `width=${bodyWidth + 40},height=800`)
   if (!printWindow) {
     console.warn("Unable to open print window. Please allow popups for this site.")
     return
@@ -122,10 +118,13 @@ function openPrintWindow(html, bodyWidth, autoClose) {
   printWindow.document.close()
 }
 
-function customerBody(order, items, brand) {
+function customerBody(order, items, brand, logo) {
+  const brandName = cleanBrandName(brand.name)
+
   return `
     <div class="center">
-      ${brand.name ? `<h1>${escapeHtml(brand.name)}</h1>` : ""}
+      ${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo" />` : ""}
+      ${brandName ? `<h1>${escapeHtml(brandName)}</h1>` : ""}
       ${brand.address ? `<div class="muted">${escapeHtml(brand.address)}</div>` : ""}
       ${brand.phone ? `<div class="muted">${escapeHtml(brand.phone)}</div>` : ""}
     </div>
@@ -147,7 +146,7 @@ function customerBody(order, items, brand) {
             <td style="width:70%">${escapeHtml(String(it.quantity ?? 1))}x ${escapeHtml(it.name)}</td>
             <td style="width:30%" class="right">${escapeHtml(fmtCurrency((it.price ?? 0) * (it.quantity ?? 1)))}</td>
           </tr>
-          ${it.notes ? `<tr><td colspan="2" class="muted small">Notes: ${escapeHtml(it.notes)}</td></tr>` : ""}
+          ${it.notes ? `<tr><td colspan="2" class="muted small">Addons: ${escapeHtml(it.notes)}</td></tr>` : ""}
         `).join("")}
       </tbody>
     </table>
@@ -171,32 +170,38 @@ function customerBody(order, items, brand) {
   `
 }
 
-function kitchenBody(order, items) {
+function kitchenBody(order, items, brand, logo) {
   const table = getTableNumber(order)
   const typeLabel = order.orderType === "dine-in"
     ? `Dine-in${table ? ` - Table ${table}` : ""}`
     : (order.orderType ?? "")
+  const brandName = cleanBrandName(brand.name)
 
   return `
     <div class="center">
-      <div class="k-title">KITCHEN</div>
-      <div class="k-order">#${escapeHtml(order.orderNumber ?? "-")}</div>
-      <div class="k-type">${escapeHtml(typeLabel)}</div>
-      <div class="muted">${escapeHtml(fmtDate(order.createdAt))}</div>
-      ${order.orderType && order.orderType !== "dine-in" && order.customerName
-        ? `<div class="muted">${escapeHtml(order.customerName)}</div>` : ""}
+      ${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo" />` : ""}
+      ${brandName ? `<h1>${escapeHtml(brandName)}</h1>` : ""}
+      <h2>KITCHEN</h2>
     </div>
 
     <div class="line"></div>
 
-    <table class="items k-items">
+    <div>
+      <div class="small"><strong>Order:</strong> ${escapeHtml(order.orderNumber ?? "-")}</div>
+      <div class="small"><strong>Date:</strong> ${escapeHtml(fmtDate(order.createdAt))}</div>
+      ${typeLabel ? `<div class="small"><strong>Type:</strong> ${escapeHtml(typeLabel)}</div>` : ""}
+      ${order.orderType && order.orderType !== "dine-in" && order.customerName
+        ? `<div class="small"><strong>Customer:</strong> ${escapeHtml(order.customerName)}</div>` : ""}
+    </div>
+
+    <table class="items">
       <tbody>
         ${items.map(it => `
           <tr>
-            <td style="width:18%">${escapeHtml(String(it.quantity ?? 1))}x</td>
-            <td>${escapeHtml(it.name)}</td>
+            <td style="width:70%">${escapeHtml(String(it.quantity ?? 1))}x ${escapeHtml(it.name)}</td>
+            <td style="width:30%" class="right"></td>
           </tr>
-          ${it.notes ? `<tr><td></td><td class="k-note">** ${escapeHtml(it.notes)}</td></tr>` : ""}
+          ${it.notes ? `<tr><td colspan="2" class="muted small">Addons: ${escapeHtml(it.notes)}</td></tr>` : ""}
         `).join("")}
       </tbody>
     </table>
@@ -211,11 +216,21 @@ function kitchenBody(order, items) {
 export function printReceipt(order = {}, options = {}) {
   if (typeof window === "undefined") return
 
-  const { type = "customer", paperWidthMm = 80, brand = {}, autoClose = true, scale = 1.5 } = options
+  const {
+    type = "customer",
+    paperWidthMm = 80,
+    brand = {},
+    logo = "/food-gate-truck.jpeg",   // ← public folder path
+    autoClose = true,
+    scale = 1.5
+  } = options
+
   const { bodyWidth, fs } = getSizes(paperWidthMm, scale)
   const items = Array.isArray(order.items) ? order.items : []
 
-  const body = type === "kitchen" ? kitchenBody(order, items) : customerBody(order, items, brand)
+  const body = type === "kitchen"
+    ? kitchenBody(order, items, brand, logo)
+    : customerBody(order, items, brand, logo)
 
   const html = `
   <!doctype html>
@@ -240,9 +255,17 @@ export function printReceipt(order = {}, options = {}) {
 export function printWorkPeriodSummary(workPeriod = {}, options = {}) {
   if (typeof window === "undefined") return
 
-  const { paperWidthMm = 80, brand = {}, autoClose = true, scale = 1.5 } = options
+  const {
+    paperWidthMm = 80,
+    brand = {},
+    logo = "/food-gate-truck.jpeg",
+    autoClose = true,
+    scale = 1.5
+  } = options
+
   const { bodyWidth, fs } = getSizes(paperWidthMm, scale)
   const s = workPeriod.summary ?? {}
+  const brandName = cleanBrandName(brand.name)
 
   const row = (label, value, strong = false) =>
     `<div class="row"><div class="${strong ? "bold" : "muted"}">${escapeHtml(label)}</div><div class="${strong ? "bold" : "muted"}">${escapeHtml(value)}</div></div>`
@@ -258,7 +281,8 @@ export function printWorkPeriodSummary(workPeriod = {}, options = {}) {
   <body>
     <div class="receipt">
       <div class="center">
-        ${brand.name ? `<h1>${escapeHtml(brand.name)}</h1>` : ""}
+        ${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo" />` : ""}
+        ${brandName ? `<h1>${escapeHtml(brandName)}</h1>` : ""}
         <h2>WORK PERIOD REPORT</h2>
       </div>
       <div class="line"></div>
@@ -271,11 +295,6 @@ export function printWorkPeriodSummary(workPeriod = {}, options = {}) {
       ${row("Card sales", fmtCurrency(s.cardSales ?? 0))}
       ${row("Other sales", fmtCurrency(s.otherSales ?? 0))}
       ${row("TOTAL SALES", fmtCurrency(s.totalSales ?? 0), true)}
-      <div class="line"></div>
-      ${row("Opening cash", fmtCurrency(workPeriod.openingCash ?? 0))}
-      ${row("Expected cash", fmtCurrency(s.expectedCash ?? 0))}
-      ${row("Counted cash", fmtCurrency(workPeriod.closingCash ?? 0))}
-      ${row("Difference", fmtCurrency(s.cashDifference ?? 0), true)}
       <div style="height:24px"></div>
     </div>
   </body>

@@ -13,16 +13,14 @@ import { format } from "date-fns"
 import { Search, RefreshCw, ChefHat, Receipt } from "lucide-react"
 import OrderDetails from '@/components/ui/order-details'
 import printReceipt from '@/lib/print-receipt'
-import { useWorkPeriod } from '@/components/work-period'
-
-const BRAND = { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" }
+import { useWorkPeriod, BRAND } from '@/components/work-period'
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const { workPeriod } = useWorkPeriod()
   const [periods, setPeriods] = useState([])
-  const [selectedPeriod, setSelectedPeriod] = useState(null) // null = abhi load ho raha, 'none' = koi period nahi
+  const [selectedPeriod, setSelectedPeriod] = useState(null) // null = still loading, 'none' = no work period exists
   const [statusFilter, setStatusFilter] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
@@ -30,7 +28,7 @@ export default function OrdersPage() {
   const fetchCounter = useRef(0)
   const activeRequests = useRef(0)
 
-  // Work periods ki list (start/end hone par dobara). Default: jo open hai, warna sab se latest.
+  // List of work periods (reloaded when one starts/ends). Default: the open one, otherwise the latest.
   useEffect(() => {
     const controller = new AbortController()
     fetchPeriods(controller.signal)
@@ -65,7 +63,7 @@ export default function OrdersPage() {
   }
 
   const fetchOrders = async (signal) => {
-    if (!selectedPeriod) return // abhi periods load ho rahe hain
+    if (!selectedPeriod) return // work periods are still loading
     if (selectedPeriod === 'none') {
       setOrders([])
       setLoading(false)
@@ -84,7 +82,7 @@ export default function OrdersPage() {
       const response = await fetch(`/api/orders?${params}`, signal ? { signal } : undefined)
       const data = await response.json()
 
-      // purani request ka result ignore karo
+      // ignore the result of an outdated request
       if (thisRequestId !== fetchCounter.current) return
 
       if (data.orders) {
@@ -94,7 +92,7 @@ export default function OrdersPage() {
       if (error.name === 'AbortError') return
       console.error('Error fetching orders:', error)
     } finally {
-      // sirf latest request loading band karegi
+      // only the latest request turns off loading
       if (thisRequestId === fetchCounter.current) setLoading(false)
     }
   }
@@ -178,7 +176,7 @@ export default function OrdersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {periods.length === 0 && (
-                    <SelectItem value="none" disabled>Koi work period nahi</SelectItem>
+                    <SelectItem value="none" disabled>No work period</SelectItem>
                   )}
                   {periods.map((p) => (
                     <SelectItem key={p._id} value={p._id}>
@@ -237,7 +235,7 @@ export default function OrdersPage() {
           {filteredOrders.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               {selectedPeriod === 'none'
-                ? 'Abhi tak koi work period start nahi hua'
+                ? 'No work period has been started yet'
                 : 'No orders found for the selected criteria'}
             </div>
           ) : (

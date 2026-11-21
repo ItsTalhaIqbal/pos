@@ -5,12 +5,11 @@ import Link from "next/link"
 import { format } from "date-fns"
 import { Play, Square, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { printWorkPeriodSummary } from "@/lib/print-receipt"
 
-const BRAND = { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" }
+export const BRAND = { name: "Food Gate Grillish Okara", address: "Church Road, Near Pizza Online, Okara", phone: "0301-0560386" }
 
 const money = (n) => `PKR ${Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 const when = (d) => (d ? format(new Date(d), "dd MMM, hh:mm a") : "-")
@@ -45,34 +44,34 @@ export function WorkPeriodProvider({ children }) {
     }
   }, [])
 
-  // Pehli load + har 30 sec (doosre device se start/end ho to yahan bhi pata chal jaye)
+  // Load once, then every 30 seconds (so a start/end from another device shows up here too)
   useEffect(() => {
     refresh()
     const t = setInterval(refresh, 30000)
     return () => clearInterval(t)
   }, [refresh])
 
-  const startWorkPeriod = useCallback(async (openingCash) => {
+  const startWorkPeriod = useCallback(async () => {
     const res = await fetch("/api/work-period", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ openingCash: Number(openingCash) || 0 }),
+      body: JSON.stringify({}),
     })
     const data = await res.json()
     await refresh()
-    if (!res.ok) throw new Error(data.error || "Work period start nahi hua")
+    if (!res.ok) throw new Error(data.error || "Could not start the work period")
     return data.workPeriod
   }, [refresh])
 
-  const endWorkPeriod = useCallback(async ({ closingCash, force = false }) => {
+  const endWorkPeriod = useCallback(async ({ force = false } = {}) => {
     const res = await fetch("/api/work-period/end", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ closingCash, force }),
+      body: JSON.stringify({ force }),
     })
     const data = await res.json()
     if (!res.ok) {
-      const err = new Error(data.error || "Work period end nahi hua")
+      const err = new Error(data.error || "Could not end the work period")
       err.requiresForce = !!data.requiresForce
       throw err
     }
@@ -90,12 +89,11 @@ export function WorkPeriodProvider({ children }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  POS page par dikhne wala "Start Work Period" card                         */
+/*  "Start Work Period" card shown on the POS page                            */
 /* -------------------------------------------------------------------------- */
 
 export function StartWorkPeriodCard() {
   const { startWorkPeriod } = useWorkPeriod()
-  const [openingCash, setOpeningCash] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
 
@@ -103,7 +101,7 @@ export function StartWorkPeriodCard() {
     setSubmitting(true)
     setError("")
     try {
-      await startWorkPeriod(openingCash)
+      await startWorkPeriod()
     } catch (e) {
       setError(e.message)
     } finally {
@@ -114,25 +112,12 @@ export function StartWorkPeriodCard() {
   return (
     <Card className="max-w-md mx-auto">
       <CardHeader>
-        <CardTitle>Work Period band hai</CardTitle>
+        <CardTitle>Work Period is closed</CardTitle>
         <CardDescription>
-          Order lene ke liye pehle work period start karo.
+          Start a work period before taking orders.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <label className="text-sm font-medium">Opening Cash (PKR)</label>
-          <Input
-            type="number"
-            min="0"
-            placeholder="0"
-            value={openingCash}
-            onChange={(e) => setOpeningCash(e.target.value)}
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Counter/gallay me shuru me jitna cash hai.
-          </p>
-        </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
         <Button className="w-full" onClick={handleStart} disabled={submitting}>
           <Play className="h-4 w-4 mr-2" />
@@ -158,33 +143,28 @@ function Stat({ label, value, strong }) {
 
 function EndWorkPeriodDialog({ open, onOpenChange }) {
   const { workPeriod, stats, endWorkPeriod } = useWorkPeriod()
-  const [closingCash, setClosingCash] = useState("")
   const [force, setForce] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
-  const [result, setResult] = useState(null) // end hone ke baad ka summary
+  const [result, setResult] = useState(null) // summary shown after the period has ended
 
   const handleOpenChange = (value) => {
     onOpenChange(value)
     if (!value) {
-      // band hone par form reset
-      setClosingCash("")
+      // reset the form when the dialog closes
       setForce(false)
       setError("")
       setResult(null)
     }
   }
 
-  const expectedCash = (workPeriod?.openingCash ?? 0) + (stats?.cashSales ?? 0)
-  const counted = closingCash === "" ? null : Number(closingCash)
-  const difference = counted === null ? null : counted - expectedCash
   const hasOpenOrders = (stats?.openOrders ?? 0) > 0
 
   const handleEnd = async () => {
     setSubmitting(true)
     setError("")
     try {
-      const closed = await endWorkPeriod({ closingCash: counted, force })
+      const closed = await endWorkPeriod({ force })
       setResult(closed)
     } catch (e) {
       setError(e.message)
@@ -193,14 +173,14 @@ function EndWorkPeriodDialog({ open, onOpenChange }) {
     }
   }
 
-  // End ho chuka: summary dikhao
+  // Already ended: show the sales summary
   if (result) {
     const s = result.summary ?? {}
     return (
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Work Period End ho gaya</DialogTitle>
+            <DialogTitle>Work Period Ended</DialogTitle>
             <DialogDescription>
               {when(result.startedAt)} → {when(result.endedAt)}
             </DialogDescription>
@@ -211,11 +191,8 @@ function EndWorkPeriodDialog({ open, onOpenChange }) {
             <Stat label="Cash sales" value={money(s.cashSales)} />
             <Stat label="Card sales" value={money(s.cardSales)} />
             <Stat label="Other sales" value={money(s.otherSales)} />
-            <Stat label="Total sales" value={money(s.totalSales)} strong />
             <div className="border-t my-2" />
-            <Stat label="Expected cash" value={money(s.expectedCash)} />
-            <Stat label="Counted cash" value={money(result.closingCash)} />
-            <Stat label="Difference" value={money(s.cashDifference)} strong />
+            <Stat label="Total sales" value={money(s.totalSales)} strong />
           </div>
           <div className="flex justify-end gap-2">
             <Button
@@ -249,28 +226,8 @@ function EndWorkPeriodDialog({ open, onOpenChange }) {
           <Stat label="Cash sales" value={money(stats?.cashSales)} />
           <Stat label="Card sales" value={money(stats?.cardSales)} />
           <Stat label="Other sales" value={money(stats?.otherSales)} />
-          <Stat label="Total sales" value={money(stats?.totalSales)} strong />
           <div className="border-t my-2" />
-          <Stat label="Opening cash" value={money(workPeriod.openingCash)} />
-          <Stat label="Expected cash in counter" value={money(expectedCash)} strong />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium">Counted Cash (PKR) *</label>
-          <Input
-            type="number"
-            min="0"
-            placeholder="Counter me jitna cash hai"
-            value={closingCash}
-            onChange={(e) => setClosingCash(e.target.value)}
-          />
-          {difference !== null && (
-            <p className={`text-sm mt-1 ${difference === 0 ? "text-green-600" : "text-amber-600"}`}>
-              {difference === 0
-                ? "Cash bilkul match hai"
-                : `${difference > 0 ? "Extra" : "Kam"}: ${money(Math.abs(difference))}`}
-            </p>
-          )}
+          <Stat label="Total sales" value={money(stats?.totalSales)} strong />
         </div>
 
         {hasOpenOrders && (
@@ -282,7 +239,7 @@ function EndWorkPeriodDialog({ open, onOpenChange }) {
               onChange={(e) => setForce(e.target.checked)}
             />
             <span>
-              {stats.openOrders} order(s) abhi pending/preparing/ready hain. Phir bhi end karna hai.
+              {stats.openOrders} order(s) are still pending / preparing / ready. End the work period anyway.
             </span>
           </label>
         )}
@@ -296,7 +253,7 @@ function EndWorkPeriodDialog({ open, onOpenChange }) {
           <Button
             variant="destructive"
             onClick={handleEnd}
-            disabled={submitting || counted === null || Number.isNaN(counted) || (hasOpenOrders && !force)}
+            disabled={submitting || (hasOpenOrders && !force)}
           >
             {submitting ? "Ending..." : "End Work Period"}
           </Button>
@@ -307,7 +264,7 @@ function EndWorkPeriodDialog({ open, onOpenChange }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Dashboard ke top par status bar                                           */
+/*  Status bar at the top of the dashboard                                    */
 /* -------------------------------------------------------------------------- */
 
 export function WorkPeriodBar() {
@@ -338,7 +295,7 @@ export function WorkPeriodBar() {
             <div className="flex items-center gap-2">
               <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
               <span className="font-medium">Work Period CLOSED</span>
-              <span className="text-muted-foreground">order lene ke liye start karo</span>
+              <span className="text-muted-foreground">start one to take orders</span>
             </div>
             <Button size="sm" asChild>
               <Link href="/dashboard/pos">

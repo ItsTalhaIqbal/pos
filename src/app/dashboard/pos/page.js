@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import printReceipt from '@/lib/print-receipt'
-import { useWorkPeriod, StartWorkPeriodCard } from '@/components/work-period'
+import { useWorkPeriod, StartWorkPeriodCard, BRAND } from '@/components/work-period'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,30 +12,35 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
 import { POSSkeleton } from "@/components/skeletons/POSSkeleton"
-import { 
-  Plus, 
-  Minus, 
-  Trash2, 
-  ShoppingCart, 
+import {
+  Plus,
+  Minus,
+  Trash2,
+  ShoppingCart,
   Search,
   Receipt,
-  User,
-  Phone
+  LayoutGrid
 } from "lucide-react"
 
-// Order place hote hi kaunsi slips khud print hon.
-// Sirf kitchen: ['kitchen']  |  dono: ['kitchen', 'customer']
+// Which slips are printed automatically when an order is placed.
+// Kitchen only: ['kitchen']  |  both: ['kitchen', 'customer']
 const AUTO_PRINT_TYPES = ['kitchen']
-const BRAND = { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" }
+
+const money = (n) => `PKR ${Number(n ?? 0).toFixed(2)}`
+
+// A cart line is identified by the item AND its toppings,
+// so the same burger with different add-ons becomes separate lines.
+const makeKey = (itemId, toppings) =>
+  `${itemId}|${toppings.map(t => t._id).sort().join(',')}`
 
 export default function POSPage() {
   const { workPeriod, loading: workPeriodLoading, refresh: refreshWorkPeriod } = useWorkPeriod()
   const [categories, setCategories] = useState([])
   const [items, setItems] = useState([])
+  const [toppings, setToppings] = useState([])
   const [tables, setTables] = useState([])
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [cart, setCart] = useState([])
   const [customerName, setCustomerName] = useState('walk-in-customer')
   const [customerPhone, setCustomerPhone] = useState('')
@@ -44,158 +49,146 @@ export default function POSPage() {
   const [orderType, setOrderType] = useState('dine-in')
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [loading, setLoading] = useState(true)
-  const activeRequests = useRef(0)
-
-  const beginRequest = () => {
-    activeRequests.current += 1
-    setLoading(true)
-  }
-
-  const endRequest = () => {
-    activeRequests.current = Math.max(0, activeRequests.current - 1)
-    if (activeRequests.current === 0) setLoading(false)
-  }
+  const [submitting, setSubmitting] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
 
-  const categoriesReq = useRef(0)
-  const itemsReq = useRef(0)
-  const tablesReq = useRef(0)
-  const isInitialMount = useRef(true)
+  // Toppings picker
+  const [toppingItem, setToppingItem] = useState(null)
+  const [pickedToppings, setPickedToppings] = useState([])
 
-  // Initial load
-  useEffect(() => {
-    const c1 = new AbortController()
-    const c2 = new AbortController()
-    const c3 = new AbortController()
-    fetchCategories(c1.signal)
-    fetchItems(c2.signal)
-    fetchTables(c3.signal)
-    isInitialMount.current = false
-    return () => {
-      c1.abort(); c2.abort(); c3.abort()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Debounce search input
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(searchTerm), 500)
-    return () => clearTimeout(t)
-  }, [searchTerm])
-
-  // Fetch items when filters change (but not on initial mount)
-  useEffect(() => {
-    if (isInitialMount.current) return
-    const c = new AbortController()
-    fetchItems(c.signal)
-    return () => c.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategory, debouncedSearch])
-
-  const fetchCategories = async (signal) => {
-    const thisId = ++categoriesReq.current
-    beginRequest()
-    try {
-      const response = await fetch('/api/categories?activeOnly=true', { signal })
-      const data = await response.json()
-      if (thisId !== categoriesReq.current) return
-      if (data.categories) {
-        setCategories(data.categories)
-      }
-    } catch (error) {
-      if (error.name === 'AbortError') return
-      console.error('Error fetching categories:', error)
-    } finally {
-      endRequest()
-    }
-  }
-
-  const fetchItems = async (signal) => {
-    const thisId = ++itemsReq.current
-    beginRequest()
-    try {
-      const params = new URLSearchParams()
-      if (selectedCategory !== 'all') {
-        params.append('categoryId', selectedCategory)
-      }
-      if (debouncedSearch) {
-        params.append('search', debouncedSearch)
-      }
-
-      const response = await fetch(`/api/items?${params}`, { signal })
-      const data = await response.json()
-      if (thisId !== itemsReq.current) return
-      if (data.items) {
-        setItems(data.items)
-      }
-    } catch (error) {
-      if (error.name === 'AbortError') return
-      console.error('Error fetching items:', error)
-    } finally {
-      endRequest()
-    }
-  }
-
-  const fetchTables = async (signal) => {
-    const thisId = ++tablesReq.current
-    beginRequest()
+  const fetchTables = useCallback(async (signal) => {
     try {
       const response = await fetch('/api/tables', { signal })
       const data = await response.json()
-      if (thisId !== tablesReq.current) return
-      if (data.tables) {
-        setTables(data.tables)
-      }
+      if (data.tables) setTables(data.tables)
     } catch (error) {
       if (error.name === 'AbortError') return
       console.error('Error fetching tables:', error)
-    } finally {
-      endRequest()
     }
+  }, [])
+
+  // Initial load: everything is fetched once, categories / search filter on the client (instant)
+  useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+
+    const load = async () => {
+      try {
+        const [catRes, itemRes, topRes] = await Promise.all([
+          fetch('/api/categories?activeOnly=true', { signal }).then(r => r.json()),
+          fetch('/api/items', { signal }).then(r => r.json()),
+          fetch('/api/toppings', { signal }).then(r => r.json()),
+        ])
+        if (catRes.categories) setCategories(catRes.categories)
+        if (itemRes.items) setItems(itemRes.items)
+        if (topRes.toppings) setToppings(topRes.toppings)
+        await fetchTables(signal)
+      } catch (error) {
+        if (error.name === 'AbortError') return
+        console.error('Error loading POS data:', error)
+      } finally {
+        if (!signal.aborted) setLoading(false)
+      }
+    }
+
+    load()
+    return () => controller.abort()
+  }, [fetchTables])
+
+  // Items per category (for the counts in the left bar)
+  const countByCategory = useMemo(() => {
+    const counts = {}
+    items.forEach(item => {
+      const id = item.categoryId?._id
+      if (id) counts[id] = (counts[id] || 0) + 1
+    })
+    return counts
+  }, [items])
+
+  const filteredItems = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    return items.filter(item => {
+      if (selectedCategory !== 'all' && item.categoryId?._id !== selectedCategory) return false
+      if (term) {
+        const haystack = `${item.name} ${item.description || ''}`.toLowerCase()
+        if (!haystack.includes(term)) return false
+      }
+      return true
+    })
+  }, [items, selectedCategory, searchTerm])
+
+  /* ------------------------------- Cart ---------------------------------- */
+
+  const addToCart = (item, chosenToppings = []) => {
+    const key = makeKey(item._id, chosenToppings)
+    const toppingsTotal = chosenToppings.reduce((sum, t) => sum + t.price, 0)
+
+    setCart(prev => {
+      const existing = prev.find(line => line.key === key)
+      if (existing) {
+        return prev.map(line =>
+          line.key === key ? { ...line, quantity: line.quantity + 1 } : line
+        )
+      }
+      return [
+        ...prev,
+        {
+          key,
+          _id: item._id,
+          name: item.name,
+          basePrice: item.price,
+          toppings: chosenToppings.map(t => ({ _id: t._id, name: t.name, price: t.price })),
+          price: item.price + toppingsTotal, // unit price including toppings
+          quantity: 1
+        }
+      ]
+    })
   }
 
-  const addToCart = (item) => {
-    const existingItem = cart.find(cartItem => cartItem._id === item._id)
-    
-    if (existingItem) {
-      setCart(cart.map(cartItem =>
-        cartItem._id === item._id
-          ? { ...cartItem, quantity: cartItem.quantity + 1 }
-          : cartItem
-      ))
+  const handleItemClick = (item) => {
+    if (item.allowToppings && toppings.length > 0) {
+      setToppingItem(item)
+      setPickedToppings([])
     } else {
-      setCart([...cart, { ...item, quantity: 1 }])
+      addToCart(item)
     }
   }
 
-  const updateQuantity = (itemId, newQuantity) => {
-    if (newQuantity === 0) {
-      setCart(cart.filter(item => item._id !== itemId))
+  const toggleTopping = (id) => {
+    setPickedToppings(prev =>
+      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+    )
+  }
+
+  const confirmToppings = () => {
+    const chosen = toppings.filter(t => pickedToppings.includes(t._id))
+    addToCart(toppingItem, chosen)
+    setToppingItem(null)
+    setPickedToppings([])
+  }
+
+  const updateQuantity = (key, newQuantity) => {
+    if (newQuantity <= 0) {
+      setCart(prev => prev.filter(line => line.key !== key))
     } else {
-      setCart(cart.map(item =>
-        item._id === itemId
-          ? { ...item, quantity: newQuantity }
-          : item
+      setCart(prev => prev.map(line =>
+        line.key === key ? { ...line, quantity: newQuantity } : line
       ))
     }
   }
 
-  const removeFromCart = (itemId) => {
-    setCart(cart.filter(item => item._id !== itemId))
+  const removeFromCart = (key) => {
+    setCart(prev => prev.filter(line => line.key !== key))
   }
 
-  const calculateSubtotal = () => {
-    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-  }
+  const calculateSubtotal = () =>
+    cart.reduce((sum, line) => sum + (line.price * line.quantity), 0)
 
-  const calculateTax = (subtotal) => {
-    return subtotal * 0.00 // 0% tax
-  }
+  const calculateTax = (subtotal) => subtotal * 0.00 // 0% tax
 
   const calculateTotal = () => {
     const subtotal = calculateSubtotal()
-    const tax = calculateTax(subtotal)
-    return subtotal + tax
+    return subtotal + calculateTax(subtotal)
   }
 
   const clearCart = () => {
@@ -206,9 +199,11 @@ export default function POSPage() {
     setSelectedTable('')
   }
 
+  /* ----------------------------- Checkout -------------------------------- */
+
   const handlePrint = (order = {}) => {
     AUTO_PRINT_TYPES.forEach((type, index) => {
-      // ek se zyada slip ho to thora gap taake popups aapas me na takrayen
+      // with more than one slip, wait a little so the popups do not collide
       setTimeout(() => {
         try {
           printReceipt(order, { type, paperWidthMm: 80, brand: BRAND })
@@ -231,13 +226,13 @@ export default function POSPage() {
       return
     }
 
-    // Validate table selection for dine-in orders
+    // Dine-in orders need a table
     if (orderType === 'dine-in' && !selectedTable) {
       alert('Please select a table for dine-in orders')
       return
     }
 
-  beginRequest()
+    setSubmitting(true)
     try {
       const subtotal = calculateSubtotal()
       const tax = calculateTax(subtotal)
@@ -250,12 +245,16 @@ export default function POSPage() {
         tableId: selectedTable || null,
         orderType,
         paymentMethod,
-        items: cart.map(item => ({
-          itemId: item._id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          notes: ''
+        items: cart.map(line => ({
+          itemId: line._id,
+          name: line.name,
+          price: line.price, // unit price including toppings
+          quantity: line.quantity,
+          // shows up on the kitchen slip and the customer receipt
+          notes: line.toppings.length > 0
+            ? `Add-ons: ${line.toppings.map(t => t.name).join(', ')}`
+            : '',
+          toppings: line.toppings.map(t => ({ name: t.name, price: t.price }))
         })),
         subtotal,
         tax,
@@ -272,20 +271,20 @@ export default function POSPage() {
       })
 
       if (response.status === 403) {
-        // work period band ho gaya (kisi aur device se end hua)
+        // the work period was closed (for example from another device)
         const err = await response.json().catch(() => ({}))
-        alert(err.error || 'Work period start nahi hai')
+        alert(err.error || 'No work period is open')
         refreshWorkPeriod()
         return
       }
 
       if (response.ok) {
         const newOrder = await response.json()
-        // Kitchen slip auto print (support both { order } shape and direct order)
+        // Auto print the kitchen slip (supports both { order } and a direct order)
         const created = newOrder?.order ?? newOrder
         handlePrint(created)
-        refreshWorkPeriod() // top bar ke orders/sales update
-        // Update table status to occupied if it's a dine-in order
+        refreshWorkPeriod() // update the orders / sales in the top bar
+        // Mark the table as occupied for dine-in orders
         if (orderType === 'dine-in' && selectedTable) {
           await fetch(`/api/tables/${selectedTable}`, {
             method: 'PUT',
@@ -297,10 +296,9 @@ export default function POSPage() {
               currentOrderId: created._id
             }),
           })
-          // Refresh tables list
-          fetchTables()          
+          fetchTables()
         }
-        
+
         clearCart()
         setShowCheckout(false)
       } else {
@@ -310,17 +308,15 @@ export default function POSPage() {
       console.error('Error creating order:', error)
       alert('Failed to create order. Please try again.')
     } finally {
-      endRequest()
+      setSubmitting(false)
     }
   }
-
-  const filteredItems = items
 
   if (loading || workPeriodLoading) {
     return <POSSkeleton />
   }
 
-  // Work period open nahi to order punch nahi ho sakta
+  // Orders cannot be taken without an open work period
   if (!workPeriod) {
     return (
       <div className="space-y-6">
@@ -333,6 +329,10 @@ export default function POSPage() {
     )
   }
 
+  const toppingsPreviewTotal = toppings
+    .filter(t => pickedToppings.includes(t._id))
+    .reduce((sum, t) => sum + t.price, 0)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-y-5">
@@ -343,16 +343,16 @@ export default function POSPage() {
         <div className="flex items-center gap-2">
           <Badge variant="secondary">
             <ShoppingCart className="h-4 w-4 mr-1" />
-            {cart.reduce((sum, item) => sum + item.quantity, 0)} items
+            {cart.reduce((sum, line) => sum + line.quantity, 0)} items
           </Badge>
           <Dialog open={showCheckout} onOpenChange={setShowCheckout}>
             <DialogTrigger asChild>
               <Button disabled={cart.length === 0}>
                 <Receipt className="h-4 w-4 mr-2" />
-                Checkout (PKR {calculateTotal().toFixed(2)})
+                Checkout ({money(calculateTotal())})
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Checkout</DialogTitle>
                 <DialogDescription>
@@ -443,29 +443,36 @@ export default function POSPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {cart.map((item) => (
-                        <TableRow key={item._id}>
-                          <TableCell>{item.name}</TableCell>
-                          <TableCell>{item.quantity}</TableCell>
-                          <TableCell>PKR {item.price.toFixed(2)}</TableCell>
-                          <TableCell>PKR {(item.price * item.quantity).toFixed(2)}</TableCell>
+                      {cart.map((line) => (
+                        <TableRow key={line.key}>
+                          <TableCell>
+                            <div>{line.name}</div>
+                            {line.toppings.length > 0 && (
+                              <div className="text-xs text-muted-foreground whitespace-normal">
+                                + {line.toppings.map(t => t.name).join(', ')}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>{line.quantity}</TableCell>
+                          <TableCell>{money(line.price)}</TableCell>
+                          <TableCell>{money(line.price * line.quantity)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                  
+
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>PKR {calculateSubtotal().toFixed(2)}</span>
+                      <span>{money(calculateSubtotal())}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tax (0%):</span>
-                      <span>PKR {calculateTax(calculateSubtotal()).toFixed(2)}</span>
+                      <span>{money(calculateTax(calculateSubtotal()))}</span>
                     </div>
                     <div className="flex justify-between font-bold text-lg">
                       <span>Total:</span>
-                      <span>PKR {calculateTotal().toFixed(2)}</span>
+                      <span>{money(calculateTotal())}</span>
                     </div>
                   </div>
                 </div>
@@ -489,8 +496,8 @@ export default function POSPage() {
                   <Button variant="outline" onClick={() => setShowCheckout(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={submitOrder} disabled={loading}>
-                    {loading ? 'Processing...' : 'Place Order'}
+                  <Button onClick={submitOrder} disabled={submitting}>
+                    {submitting ? 'Processing...' : 'Place Order'}
                   </Button>
                 </div>
               </div>
@@ -499,63 +506,124 @@ export default function POSPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Menu Items */}
-        <div className=" lg:col-span-2 space-y-4">
-          {/* Filters */}
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-wrap gap-4 justify-between">
-                <div className="">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search menu items..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
+      {/* Toppings / add-ons picker */}
+      <Dialog open={!!toppingItem} onOpenChange={(open) => { if (!open) { setToppingItem(null); setPickedToppings([]) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{toppingItem?.name}</DialogTitle>
+            <DialogDescription>
+              Choose toppings / add-ons (optional)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {toppings.map((t) => {
+              const checked = pickedToppings.includes(t._id)
+              return (
+                <label
+                  key={t._id}
+                  className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors ${checked ? 'border-primary bg-primary/10' : 'hover:bg-muted'}`}
+                >
+                  <span className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={checked}
+                      onChange={() => toggleTopping(t._id)}
                     />
-                  </div>
-                </div>
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="min-w-[180px]">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map((category) => (
-                      <SelectItem key={category._id} value={category._id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+                    <span className="font-medium">{t.name}</span>
+                  </span>
+                  <span className="text-sm text-muted-foreground">+ {money(t.price)}</span>
+                </label>
+              )
+            })}
+          </div>
+          <div className="flex items-center justify-between border-t pt-4">
+            <span className="font-semibold">
+              {money((toppingItem?.price ?? 0) + toppingsPreviewTotal)}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => { setToppingItem(null); setPickedToppings([]) }}>
+                Cancel
+              </Button>
+              <Button onClick={confirmToppings}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add to Order
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-          {/* Menu Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_340px] gap-6 items-start">
+        {/* Left side bar: food categories */}
+        <Card className="lg:sticky lg:top-4">
+          <CardHeader className="pb-3 hidden lg:block">
+            <CardTitle className="text-base flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              Categories
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 lg:pt-0">
+            <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto pb-1">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('all')}
+                className={`shrink-0 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-left transition-colors ${selectedCategory === 'all' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+              >
+                <span>All Items</span>
+                <span className="text-xs opacity-80">{items.length}</span>
+              </button>
+              {categories.map((category) => {
+                const active = selectedCategory === category._id
+                return (
+                  <button
+                    key={category._id}
+                    type="button"
+                    onClick={() => setSelectedCategory(category._id)}
+                    className={`shrink-0 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-left transition-colors border-l-4 ${active ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                    style={{ borderLeftColor: category.color }}
+                  >
+                    <span>{category.name}</span>
+                    <span className="text-xs opacity-80">{countByCategory[category._id] || 0}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Menu Items */}
+        <div className="space-y-4 min-w-0">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search menu items..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {filteredItems.map((item) => (
-              <Card key={item._id} className="cursor-pointer hover:shadow-lg transition-shadow">
-                <CardContent className="p-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-start">
-                      <h3 className="font-semibold">{item.name}</h3>
-                      <Badge style={{ backgroundColor: item.categoryId?.color }}>
-                        {item.categoryId?.name}
-                      </Badge>
-                    </div>
-                    {item.description && (
-                      <p className="text-sm text-muted-foreground">{item.description}</p>
+              <Card
+                key={item._id}
+                onClick={() => handleItemClick(item)}
+                className="cursor-pointer hover:shadow-lg hover:border-primary transition-all active:scale-[0.98]"
+                style={{ borderTop: `4px solid ${item.categoryId?.color || 'transparent'}` }}
+              >
+                <CardContent className="p-4 flex flex-col justify-between gap-3 min-h-[110px]">
+                  <div>
+                    <h3 className="font-semibold leading-tight">{item.name}</h3>
+                    {item.allowToppings && toppings.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">Add-ons available</p>
                     )}
-                    <div className="flex justify-between items-center">
-                      <span className="text-lg font-bold">PKR {item.price.toFixed(2)}</span>
-                      <Button onClick={() => addToCart(item)} size="sm">
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add
-                      </Button>
-                    </div>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold">{money(item.price)}</span>
+                    <span className="rounded-full bg-primary text-primary-foreground p-1.5">
+                      <Plus className="h-4 w-4" />
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -572,7 +640,7 @@ export default function POSPage() {
         </div>
 
         {/* Cart */}
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-4">
           <Card>
             <CardHeader>
               <CardTitle>Current Order</CardTitle>
@@ -584,51 +652,64 @@ export default function POSPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {cart.map((item) => (
-                    <div key={item._id} className="flex items-center justify-between p-2 border rounded">
-                      <div className="flex-1">
-                        <h4 className="font-medium">{item.name}</h4>
-                        <p className="text-sm text-muted-foreground">PKR {item.price.toFixed(2)} each</p>
+                  <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                    {cart.map((line) => (
+                      <div key={line.key} className="p-2 border rounded space-y-2">
+                        <div className="flex justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium leading-tight">{line.name}</h4>
+                            {line.toppings.length > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                + {line.toppings.map(t => t.name).join(', ')}
+                              </p>
+                            )}
+                            <p className="text-sm text-muted-foreground">{money(line.price)} each</p>
+                          </div>
+                          <span className="font-semibold whitespace-nowrap">
+                            {money(line.price * line.quantity)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateQuantity(line.key, line.quantity - 1)}
+                          >
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <span className="w-8 text-center">{line.quantity}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => updateQuantity(line.key, line.quantity + 1)}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="ml-auto"
+                            onClick={() => removeFromCart(line.key)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => updateQuantity(item._id, item.quantity - 1)}
-                        >
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span className="w-8 text-center">{item.quantity}</span>
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => updateQuantity(item._id, item.quantity + 1)}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        <Button 
-                          variant="destructive" 
-                          size="sm"
-                          onClick={() => removeFromCart(item._id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  
+                    ))}
+                  </div>
+
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between">
                       <span>Subtotal:</span>
-                      <span>PKR {calculateSubtotal().toFixed(2)}</span>
+                      <span>{money(calculateSubtotal())}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tax (0%):</span>
-                      <span>PKR {calculateTax(calculateSubtotal()).toFixed(2)}</span>
+                      <span>{money(calculateTax(calculateSubtotal()))}</span>
                     </div>
                     <div className="flex justify-between font-bold text-lg">
                       <span>Total:</span>
-                      <span>PKR {calculateTotal().toFixed(2)}</span>
+                      <span>{money(calculateTotal())}</span>
                     </div>
                   </div>
 

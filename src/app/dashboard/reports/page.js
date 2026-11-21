@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,177 +10,201 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ReportsSkeleton } from "@/components/skeletons/ReportsSkeleton"
 import { format, startOfDay, endOfDay, subDays } from "date-fns"
-import { 
-  BarChart3, 
-  TrendingUp, 
-  DollarSign, 
-  RotateCcw,
+import {
+  DollarSign,
+  TrendingUp,
   CalendarIcon,
   Download,
   RefreshCw,
-  Award,
-  ShoppingBag
+  ShoppingBag,
+  Clock,
+  ChevronDown,
+  ChevronRight,
+  Award
 } from "lucide-react"
 
-export default function ReportsPage() {
-  const [startDate, setStartDate] = useState(() => subDays(new Date(), 7))
-  const [endDate, setEndDate] = useState(new Date())
-  const [loading, setLoading] = useState(true)
-  const [reportData, setReportData] = useState({
-    totalRevenue: 0,
-    totalOrders: 0,
-    avgOrderValue: 0,
-    tableTurnover: 0,
-    popularItems: [],
-    dailySales: [],
-    paymentMethods: {},
-    orderTypes: {}
-  })
+const money = (n) => `PKR ${Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 
-  const activeRequests = useRef(0)
-  const reportReq = useRef(0)
+// "Sat, 21 Nov 2026" (and the end date as well when the period ran past midnight)
+function periodDate(period) {
+  const start = new Date(period.startedAt)
+  const label = format(start, 'EEE, dd MMM yyyy')
+  if (period.endedAt) {
+    const end = new Date(period.endedAt)
+    if (format(end, 'yyyy-MM-dd') !== format(start, 'yyyy-MM-dd')) {
+      return `${label} → ${format(end, 'dd MMM')}`
+    }
+  }
+  return label
+}
+
+function periodTime(period) {
+  const start = format(new Date(period.startedAt), 'hh:mm a')
+  const end = period.endedAt ? format(new Date(period.endedAt), 'hh:mm a') : 'Now'
+  return `${start} – ${end}`
+}
+
+/* Extra detail for one work period: top items and order types */
+function PeriodDetails({ period }) {
+  const [loading, setLoading] = useState(true)
+  const [topItems, setTopItems] = useState([])
+  const [orderTypes, setOrderTypes] = useState({})
 
   useEffect(() => {
     const controller = new AbortController()
-    generateReport(controller.signal)
-    return () => controller.abort()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, endDate])
 
-  const generateReport = async (signal) => {
-    const thisId = ++reportReq.current
-    activeRequests.current += 1
-    setLoading(true)
-    try {
-      // Fetch orders for the date range
-      const promises = []
-      const currentDate = new Date(startDate)
-      
-      while (currentDate <= endDate) {
-        const dateStr = format(currentDate, 'yyyy-MM-dd')
-        promises.push(
-          fetch(`/api/orders?date=${dateStr}`, { signal }).then(res => res.json())
-        )
-        currentDate.setDate(currentDate.getDate() + 1)
-      }
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/orders?workPeriod=${period._id}&limit=500`, { signal: controller.signal })
+        const data = await res.json()
+        // cancelled orders are not part of sales
+        const orders = (data.orders || []).filter(o => o.status !== 'cancelled')
 
-      const results = await Promise.all(promises)
-      // If a newer generateReport started, ignore this result
-      if (thisId !== reportReq.current) return
-      const allOrders = results.flatMap(result => result.orders || [])
-
-      // Calculate metrics
-      const totalRevenue = allOrders.reduce((sum, order) => sum + order.total, 0)
-      const totalOrders = allOrders.length
-      const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0
-      
-      // Calculate table turnover rate (orders per table per day)
-      const dayCount = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1
-      const dineInOrders = allOrders.filter(order => order.orderType === 'dine-in').length
-      const tableTurnover = dineInOrders > 0 ? (dineInOrders / dayCount / 8).toFixed(1) : 0 // Assuming 8 tables average
-
-      // Popular items
-      const itemCounts = {}
-      allOrders.forEach(order => {
-        order.items.forEach(item => {
-          if (itemCounts[item.name]) {
-            itemCounts[item.name].quantity += item.quantity
-            itemCounts[item.name].revenue += item.price * item.quantity
-          } else {
-            itemCounts[item.name] = {
-              name: item.name,
-              quantity: item.quantity,
-              revenue: item.price * item.quantity
-            }
-          }
+        const itemMap = {}
+        const types = {}
+        orders.forEach(order => {
+          types[order.orderType] = (types[order.orderType] || 0) + 1
+          order.items.forEach(item => {
+            if (!itemMap[item.name]) itemMap[item.name] = { name: item.name, quantity: 0, revenue: 0 }
+            itemMap[item.name].quantity += item.quantity
+            itemMap[item.name].revenue += item.price * item.quantity
+          })
         })
-      })
 
-      const popularItems = Object.values(itemCounts)
-        .sort((a, b) => b.quantity - a.quantity)
-        .slice(0, 10)
-
-      // Daily sales
-      const dailySalesMap = {}
-      const dateRange = []
-      const current = new Date(startDate)
-      
-      while (current <= endDate) {
-        const dateStr = format(current, 'yyyy-MM-dd')
-        dailySalesMap[dateStr] = { date: dateStr, revenue: 0, orders: 0 }
-        dateRange.push(dateStr)
-        current.setDate(current.getDate() + 1)
+        setTopItems(Object.values(itemMap).sort((a, b) => b.quantity - a.quantity).slice(0, 8))
+        setOrderTypes(types)
+      } catch (error) {
+        if (error.name === 'AbortError') return
+        console.error('Error loading work period details:', error)
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
       }
+    }
 
-      allOrders.forEach(order => {
-        const dateStr = format(new Date(order.createdAt), 'yyyy-MM-dd')
-        if (dailySalesMap[dateStr]) {
-          dailySalesMap[dateStr].revenue += order.total
-          dailySalesMap[dateStr].orders += 1
-        }
+    load()
+    return () => controller.abort()
+  }, [period._id])
+
+  if (loading) {
+    return <div className="py-4 text-center text-sm text-muted-foreground">Loading details...</div>
+  }
+
+  return (
+    <div className="grid gap-6 md:grid-cols-2 py-2">
+      <div>
+        <h4 className="font-medium flex items-center gap-2 mb-2">
+          <Award className="h-4 w-4" />
+          Top Selling Items
+        </h4>
+        {topItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No items sold</p>
+        ) : (
+          <div className="space-y-1">
+            {topItems.map((item, index) => (
+              <div key={item.name} className="flex justify-between text-sm">
+                <span>{index + 1}. {item.name}</span>
+                <span className="text-muted-foreground">{item.quantity} sold · {money(item.revenue)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h4 className="font-medium mb-2">Order Types</h4>
+        {Object.keys(orderTypes).length === 0 ? (
+          <p className="text-sm text-muted-foreground">No orders</p>
+        ) : (
+          <div className="space-y-1">
+            {Object.entries(orderTypes).map(([type, count]) => (
+              <div key={type} className="flex justify-between text-sm">
+                <span className="capitalize">{type.replace('-', ' ')}</span>
+                <Badge variant="secondary">{count} orders</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function ReportsPage() {
+  const [startDate, setStartDate] = useState(() => subDays(new Date(), 30))
+  const [endDate, setEndDate] = useState(new Date())
+  const [periods, setPeriods] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [expanded, setExpanded] = useState(null)
+
+  const fetchPeriods = useCallback(async (signal) => {
+    try {
+      const params = new URLSearchParams({
+        list: '1',
+        limit: '200',
+        from: startOfDay(startDate).toISOString(),
+        to: endOfDay(endDate).toISOString()
       })
-
-      const dailySales = dateRange.map(date => dailySalesMap[date])
-
-      // Payment methods
-      const paymentMethods = {}
-      allOrders.forEach(order => {
-        paymentMethods[order.paymentMethod] = (paymentMethods[order.paymentMethod] || 0) + 1
-      })
-
-      // Order types
-      const orderTypes = {}
-      allOrders.forEach(order => {
-        orderTypes[order.orderType] = (orderTypes[order.orderType] || 0) + 1
-      })
-
-      setReportData({
-        totalRevenue,
-        totalOrders,
-        avgOrderValue,
-        tableTurnover,
-        popularItems,
-        dailySales,
-        paymentMethods,
-        orderTypes
-      })
-
+      const res = await fetch(`/api/work-period?${params}`, { signal, cache: 'no-store' })
+      const data = await res.json()
+      setPeriods(data.workPeriods || [])
     } catch (error) {
       if (error.name === 'AbortError') return
-      console.error('Error generating report:', error)
-    } finally {
-      activeRequests.current = Math.max(0, activeRequests.current - 1)
-      if (activeRequests.current === 0 && thisId === reportReq.current) setLoading(false)
+      console.error('Error loading work periods:', error)
     }
+  }, [startDate, endDate])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setExpanded(null)
+    fetchPeriods(controller.signal).finally(() => {
+      if (!controller.signal.aborted) setLoading(false)
+    })
+    return () => controller.abort()
+  }, [fetchPeriods])
+
+  const refresh = async () => {
+    setRefreshing(true)
+    await fetchPeriods()
+    setRefreshing(false)
+  }
+
+  const totals = useMemo(() => {
+    const totalSales = periods.reduce((sum, p) => sum + (p.summary?.totalSales ?? 0), 0)
+    const totalOrders = periods.reduce((sum, p) => sum + (p.summary?.totalOrders ?? 0), 0)
+    return {
+      totalSales,
+      totalOrders,
+      avgPerPeriod: periods.length > 0 ? totalSales / periods.length : 0
+    }
+  }, [periods])
+
+  const setRange = (days) => {
+    setEndDate(new Date())
+    setStartDate(days === 0 ? new Date() : subDays(new Date(), days))
   }
 
   const exportReport = () => {
-    const reportContent = `
-Burger Buddies - SALES REPORT
-Period: ${format(startDate, 'PP')} to ${format(endDate, 'PP')}
+    const header = ['Date', 'Start', 'End', 'Status', 'Orders', 'Cancelled', 'Cash Sales', 'Card Sales', 'Other Sales', 'Total Sales']
+    const rows = periods.map(p => [
+      format(new Date(p.startedAt), 'yyyy-MM-dd'),
+      format(new Date(p.startedAt), 'hh:mm a'),
+      p.endedAt ? format(new Date(p.endedAt), 'yyyy-MM-dd hh:mm a') : 'Open',
+      p.status,
+      p.summary?.totalOrders ?? 0,
+      p.summary?.cancelledOrders ?? 0,
+      p.summary?.cashSales ?? 0,
+      p.summary?.cardSales ?? 0,
+      p.summary?.otherSales ?? 0,
+      p.summary?.totalSales ?? 0
+    ])
+    const csv = [header, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
 
-SUMMARY:
-- Total Revenue: PKR ${reportData.totalRevenue.toFixed(2)}
-- Total Orders: ${reportData.totalOrders}
-- Average Order Value: PKR ${reportData.avgOrderValue.toFixed(2)}
-- Table Turnover Rate: ${reportData.tableTurnover} per day
-
-TOP SELLING ITEMS:
-${reportData.popularItems.map((item, index) => 
-  `${index + 1}. ${item.name} - ${item.quantity} sold - PKR ${item.revenue.toFixed(2)}`
-).join('\n')}
-
-DAILY SALES:
-${reportData.dailySales.map(day => 
-  `${day.date}: ${day.orders} orders - PKR ${day.revenue.toFixed(2)}`
-).join('\n')}
-    `
-
-    const blob = new Blob([reportContent], { type: 'text/plain' })
+    const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `sales-report-${format(startDate, 'yyyy-MM-dd')}-to-${format(endDate, 'yyyy-MM-dd')}.txt`
+    a.download = `sales-report-${format(startDate, 'yyyy-MM-dd')}-to-${format(endDate, 'yyyy-MM-dd')}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -196,32 +220,32 @@ ${reportData.dailySales.map(day =>
       <div className="flex items-center justify-between flex-wrap gap-y-5">
         <div className="flex items-center gap-4">
           <SidebarTrigger />
-          <h1 className="text-3xl font-bold tracking-tight">Reports & Analytics</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Sales Reports</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={generateReport} variant="outline" disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Button onClick={refresh} variant="outline" disabled={refreshing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={exportReport}>
+          <Button onClick={exportReport} disabled={periods.length === 0}>
             <Download className="h-4 w-4 mr-2" />
-            Export Report
+            Export CSV
           </Button>
         </div>
       </div>
 
-      {/* Date Range Selector */}
+      {/* Date range filter */}
       <Card>
         <CardHeader>
           <CardTitle>Report Period</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4 items-center flex-wrap">
-            <div className="items-center">
-              <label className="text-sm font-medium">From </label>
+          <div className="flex gap-4 items-end flex-wrap">
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium">From</label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
+                  <Button variant="outline" className="w-[220px] justify-start text-left font-normal">
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {format(startDate, "PPP")}
                   </Button>
@@ -230,18 +254,18 @@ ${reportData.dailySales.map(day =>
                   <Calendar
                     mode="single"
                     selected={startDate}
-                    onSelect={setStartDate}
+                    onSelect={(d) => d && setStartDate(d)}
                     initialFocus
                   />
                 </PopoverContent>
               </Popover>
             </div>
-            
-            <div className="items-center">
-              <label className="text-sm font-medium">To </label>
+
+            <div className="flex flex-col space-y-1">
+              <label className="text-sm font-medium">To</label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-[240px] justify-start text-left font-normal">
+                  <Button variant="outline" className="w-[220px] justify-start text-left font-normal">
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {format(endDate, "PPP")}
                   </Button>
@@ -250,28 +274,43 @@ ${reportData.dailySales.map(day =>
                   <Calendar
                     mode="single"
                     selected={endDate}
-                    onSelect={setEndDate}
+                    onSelect={(d) => d && setEndDate(d)}
                     initialFocus
                   />
                 </PopoverContent>
               </Popover>
             </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setRange(0)}>Today</Button>
+              <Button variant="outline" size="sm" onClick={() => setRange(7)}>Last 7 days</Button>
+              <Button variant="outline" size="sm" onClick={() => setRange(30)}>Last 30 days</Button>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
+      {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">PKR {reportData.totalRevenue.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">
-              {reportData.dailySales.length} days period
-            </p>
+            <div className="text-2xl font-bold">{money(totals.totalSales)}</div>
+            <p className="text-xs text-muted-foreground">In the selected dates</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Work Periods</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{periods.length}</div>
+            <p className="text-xs text-muted-foreground">Started in the selected dates</p>
           </CardContent>
         </Card>
 
@@ -281,154 +320,93 @@ ${reportData.dailySales.map(day =>
             <ShoppingBag className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{reportData.totalOrders}</div>
-            <p className="text-xs text-muted-foreground">
-              Avg {(reportData.totalOrders / Math.max(reportData.dailySales.length, 1)).toFixed(1)} per day
-            </p>
+            <div className="text-2xl font-bold">{totals.totalOrders}</div>
+            <p className="text-xs text-muted-foreground">Cancelled orders not counted</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Order Value</CardTitle>
+            <CardTitle className="text-sm font-medium">Avg Sales / Work Period</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">PKR {reportData.avgOrderValue.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">
-              Per order average
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Table Turnover</CardTitle>
-            <RotateCcw className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{reportData.tableTurnover}</div>
-            <p className="text-xs text-muted-foreground">
-              Average turnovers per day
-            </p>
+            <div className="text-2xl font-bold">{money(totals.avgPerPeriod)}</div>
+            <p className="text-xs text-muted-foreground">Per work period average</p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2 max-md:grid-cols-1">
-        {/* Top Selling Items */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Award className="h-5 w-5" />
-              Top Selling Items
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-4">Loading...</div>
-            ) : reportData.popularItems.length === 0 ? (
-              <div className="text-center py-4 text-muted-foreground">No data available</div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Rank</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Revenue</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.popularItems.map((item, index) => (
-                    <TableRow key={item.name}>
-                      <TableCell>
-                        <Badge variant={index < 3 ? "default" : "secondary"}>
-                          #{index + 1}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">{item.name}</TableCell>
-                      <TableCell>{item.quantity}</TableCell>
-                      <TableCell>PKR {item.revenue.toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Daily Sales */}
-        <Card className="">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Daily Sales
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-4">Loading...</div>
-            ) : reportData.dailySales.length === 0 ? (
-              <div className="text-center py-4 text-muted-foreground">No data available</div>
-            ) : (
-              <Table className="">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Orders</TableHead>
-                    <TableHead>Revenue</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.dailySales.map((day) => (
-                    <TableRow key={day.date}>
-                      <TableCell>{format(new Date(day.date), 'MMM dd')}</TableCell>
-                      <TableCell>{day.orders}</TableCell>
-                      <TableCell>PKR {day.revenue.toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Payment Methods & Order Types */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment Methods</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {Object.entries(reportData.paymentMethods).map(([method, count]) => (
-                <div key={method} className="flex justify-between items-center">
-                  <span className="capitalize">{method}</span>
-                  <Badge variant="secondary">{count} orders</Badge>
-                </div>
-              ))}
+      {/* Work periods table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Sales by Work Period</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {periods.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No work periods found for these dates
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Order Types</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {Object.entries(reportData.orderTypes).map(([type, count]) => (
-                <div key={type} className="flex justify-between items-center">
-                  <span className="capitalize">{type.replace('-', ' ')}</span>
-                  <Badge variant="secondary">{count} orders</Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8"></TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead className="text-right">Orders</TableHead>
+                  <TableHead className="text-right">Cancelled</TableHead>
+                  <TableHead className="text-right">Cash</TableHead>
+                  <TableHead className="text-right">Card</TableHead>
+                  <TableHead className="text-right">Other</TableHead>
+                  <TableHead className="text-right">Total Sales</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {periods.map((period) => {
+                  const s = period.summary ?? {}
+                  const isOpen = expanded === period._id
+                  return (
+                    <Fragment key={period._id}>
+                      <TableRow
+                        className="cursor-pointer"
+                        onClick={() => setExpanded(isOpen ? null : period._id)}
+                      >
+                        <TableCell>
+                          {isOpen
+                            ? <ChevronDown className="h-4 w-4" />
+                            : <ChevronRight className="h-4 w-4" />}
+                        </TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">{periodDate(period)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">{periodTime(period)}</TableCell>
+                        <TableCell className="text-right">{s.totalOrders ?? 0}</TableCell>
+                        <TableCell className="text-right">{s.cancelledOrders ?? 0}</TableCell>
+                        <TableCell className="text-right">{money(s.cashSales)}</TableCell>
+                        <TableCell className="text-right">{money(s.cardSales)}</TableCell>
+                        <TableCell className="text-right">{money(s.otherSales)}</TableCell>
+                        <TableCell className="text-right font-bold">{money(s.totalSales)}</TableCell>
+                        <TableCell>
+                          <Badge variant={period.status === 'open' ? 'default' : 'secondary'}>
+                            {period.status === 'open' ? 'Open' : 'Closed'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                      {isOpen && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={10} className="bg-muted/40">
+                            <PeriodDetails period={period} />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

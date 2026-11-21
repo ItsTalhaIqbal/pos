@@ -13,27 +13,26 @@ const WorkPeriodSchema = new mongoose.Schema({
   endedAt: {
     type: Date
   },
+  // Legacy fields: cash counting is no longer used, kept so old records still load
   openingCash: {
     type: Number,
     default: 0
   },
   closingCash: {
-    type: Number // counter me jitna cash gina gaya
+    type: Number
   },
   notes: {
     type: String,
     default: ''
   },
-  // Work period end hone par yahan summary save hoti hai
+  // Summary saved when the work period is ended
   summary: {
     totalOrders: Number,
     totalSales: Number,
     cashSales: Number,
     cardSales: Number,
     otherSales: Number,
-    cancelledOrders: Number,
-    expectedCash: Number,
-    cashDifference: Number
+    cancelledOrders: Number
   }
 }, {
   timestamps: true
@@ -41,8 +40,8 @@ const WorkPeriodSchema = new mongoose.Schema({
 
 WorkPeriodSchema.index({ startedAt: -1 });
 
-// Ek waqt me sirf EK open work period ho sakta hai (database level guarantee).
-// Do devices se ek saath start dabane par bhi dusra reject ho jayega.
+// Only ONE open work period can exist at a time (database-level guarantee).
+// If two devices press Start together, the second one is rejected.
 WorkPeriodSchema.index(
   { status: 1 },
   { unique: true, partialFilterExpression: { status: 'open' } }

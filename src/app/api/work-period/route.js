@@ -5,8 +5,9 @@ import { getPeriodStats } from '@/lib/work-period';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/work-period            -> abhi jo open hai (+ live stats)
-// GET /api/work-period?list=1     -> recent work periods ki list
+// GET /api/work-period                         -> the currently open work period (+ live stats)
+// GET /api/work-period?list=1                  -> recent work periods (each with its sales summary)
+//     optional: &limit=30  &from=<ISO date>  &to=<ISO date>  (filters on start time)
 export async function GET(request) {
   try {
     await connectDB();
@@ -14,11 +15,30 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
 
     if (searchParams.get('list')) {
-      const limit = Math.min(parseInt(searchParams.get('limit')) || 30, 100);
-      const workPeriods = await WorkPeriod.find()
+      const limit = Math.min(parseInt(searchParams.get('limit')) || 30, 200);
+
+      const query = {};
+      const from = searchParams.get('from');
+      const to = searchParams.get('to');
+      if (from || to) {
+        query.startedAt = {};
+        if (from && !Number.isNaN(new Date(from).getTime())) query.startedAt.$gte = new Date(from);
+        if (to && !Number.isNaN(new Date(to).getTime())) query.startedAt.$lte = new Date(to);
+        if (Object.keys(query.startedAt).length === 0) delete query.startedAt;
+      }
+
+      const workPeriods = await WorkPeriod.find(query)
         .sort({ startedAt: -1 })
         .limit(limit)
         .lean();
+
+      // A closed period has its summary saved. An open one is calculated live.
+      for (const period of workPeriods) {
+        if (period.status === 'open') {
+          period.summary = await getPeriodStats(period._id);
+        }
+      }
+
       return NextResponse.json({ workPeriods });
     }
 
@@ -35,40 +55,31 @@ export async function GET(request) {
   }
 }
 
-// POST /api/work-period  -> naya work period START
+// POST /api/work-period  -> START a new work period
 export async function POST(request) {
   try {
     await connectDB();
 
     const body = await request.json().catch(() => ({}));
-    const openingCash = Number(body.openingCash ?? 0);
-
-    if (Number.isNaN(openingCash) || openingCash < 0) {
-      return NextResponse.json(
-        { error: 'Opening cash sahi likho' },
-        { status: 400 }
-      );
-    }
 
     const alreadyOpen = await WorkPeriod.findOne({ status: 'open' }).lean();
     if (alreadyOpen) {
       return NextResponse.json(
-        { error: 'Work period pehle se open hai' },
+        { error: 'A work period is already open' },
         { status: 409 }
       );
     }
 
     try {
       const workPeriod = await WorkPeriod.create({
-        openingCash,
         notes: body.notes || ''
       });
       return NextResponse.json({ workPeriod }, { status: 201 });
     } catch (err) {
-      // unique index: kisi aur device ne usi waqt start kar diya
+      // unique index: another device started one at the same moment
       if (err?.code === 11000) {
         return NextResponse.json(
-          { error: 'Work period pehle se open hai' },
+          { error: 'A work period is already open' },
           { status: 409 }
         );
       }

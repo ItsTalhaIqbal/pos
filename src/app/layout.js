@@ -6,7 +6,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: "Burger Buddies",
+  title: "Food Gate Grillish",
   description: "Complete restaurant management system with POS, order management, and analytics",
 };
 
@@ -15,6 +15,7 @@ export default function RootLayout({ children }) {
     <html lang="en" suppressHydrationWarning>
       <body
         className={`${inter.className} antialiased`}
+        cz-shortcut-listen="true"
       >
         <ThemeProvider
           attribute="class"

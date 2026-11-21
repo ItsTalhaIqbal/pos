@@ -10,7 +10,11 @@ export async function GET(request) {
     const categoryId = searchParams.get('categoryId');
     const search = searchParams.get('search');
 
-    let query = { isAvailable: true };
+    // Menu management passes includeUnavailable=true so hidden items stay visible there.
+    // The POS does not, so unavailable items never show up at the counter.
+    const includeUnavailable = searchParams.get('includeUnavailable') === 'true';
+
+    let query = includeUnavailable ? {} : { isAvailable: true };
 
     if (categoryId) {
       query.categoryId = categoryId;

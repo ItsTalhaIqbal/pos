@@ -5,37 +5,29 @@ import { getPeriodStats } from '@/lib/work-period';
 
 export const dynamic = 'force-dynamic';
 
-// POST /api/work-period/end  -> open work period END
-// body: { closingCash: number, force?: boolean, notes?: string }
+// POST /api/work-period/end  -> END the open work period
+// body: { force?: boolean, notes?: string }
 export async function POST(request) {
   try {
     await connectDB();
 
     const body = await request.json().catch(() => ({}));
-    const closingCash = Number(body.closingCash);
-
-    if (body.closingCash === '' || body.closingCash == null || Number.isNaN(closingCash) || closingCash < 0) {
-      return NextResponse.json(
-        { error: 'Closing cash (counter me jitna cash hai) likho' },
-        { status: 400 }
-      );
-    }
 
     const workPeriod = await WorkPeriod.findOne({ status: 'open' });
     if (!workPeriod) {
       return NextResponse.json(
-        { error: 'Koi open work period nahi hai' },
+        { error: 'There is no open work period' },
         { status: 404 }
       );
     }
 
     const stats = await getPeriodStats(workPeriod._id);
 
-    // Pending / preparing / ready orders hon to bina force end nahi hoga
+    // Pending / preparing / ready orders block ending unless force is set
     if (stats.openOrders > 0 && !body.force) {
       return NextResponse.json(
         {
-          error: `${stats.openOrders} order(s) abhi complete nahi hue`,
+          error: `${stats.openOrders} order(s) are not completed yet`,
           openOrders: stats.openOrders,
           requiresForce: true
         },
@@ -43,16 +35,13 @@ export async function POST(request) {
       );
     }
 
-    const expectedCash = (workPeriod.openingCash || 0) + stats.cashSales;
-
-    // status:'open' condition ki wajah se double-close nahi ho sakta
+    // The status:'open' condition prevents closing the same period twice
     const closed = await WorkPeriod.findOneAndUpdate(
       { _id: workPeriod._id, status: 'open' },
       {
         $set: {
           status: 'closed',
           endedAt: new Date(),
-          closingCash,
           notes: body.notes ?? workPeriod.notes,
           summary: {
             totalOrders: stats.totalOrders,
@@ -60,9 +49,7 @@ export async function POST(request) {
             cashSales: stats.cashSales,
             cardSales: stats.cardSales,
             otherSales: stats.otherSales,
-            cancelledOrders: stats.cancelledOrders,
-            expectedCash,
-            cashDifference: closingCash - expectedCash
+            cancelledOrders: stats.cancelledOrders
           }
         }
       },
@@ -71,7 +58,7 @@ export async function POST(request) {
 
     if (!closed) {
       return NextResponse.json(
-        { error: 'Work period pehle hi end ho chuka hai' },
+        { error: 'This work period has already been ended' },
         { status: 409 }
       );
     }

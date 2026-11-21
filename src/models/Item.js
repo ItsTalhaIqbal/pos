@@ -24,6 +24,11 @@ const ItemSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  // When true, the POS asks which toppings / add-ons to add for this item
+  allowToppings: {
+    type: Boolean,
+    default: false
+  },
   preparationTime: {
     type: Number, // in minutes
     default: 15

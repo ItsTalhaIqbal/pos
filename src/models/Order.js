@@ -45,7 +45,12 @@ const OrderSchema = new mongoose.Schema({
     notes: {
       type: String,
       default: ''
-    }
+    },
+    // Toppings / add-ons chosen for this line. The line price already includes them.
+    toppings: [{
+      name: { type: String, required: true },
+      price: { type: Number, required: true, min: 0 }
+    }]
   }],
   subtotal: {
     type: Number,

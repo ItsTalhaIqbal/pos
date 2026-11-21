@@ -31,7 +31,6 @@ import {
 import Link from "next/link"
 import { ModeToggle } from "./theme-toggle-button"
 import Image from "next/image"
-import Logo from "@/assets/images/BurgerBuddies-logo-new.png"
 
 // Menu items.
 const items = [
@@ -78,8 +77,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b px-6 py-4">
         <div className="relative flex justify-center gap-2 items-center">
           <div className="absolute inset-8 bg-gradient-to-r from-[var(--primary)]/15 via-[var(--primary)]/20 to-[var(--primary)]/15 blur-lg z-1"></div>
-          <Image src={Logo} alt="Logo" className="max-md:w-10 md:w-8 lg:w-8 z-2" />
-          <span className="text-2xl font-bold text-500 z-2">BurgerBuddies</span>
+          <span className="text-xl font-bold z-2 leading-tight">Food Gate Grillish</span>
         </div>
       </SidebarHeader>
       <SidebarContent>

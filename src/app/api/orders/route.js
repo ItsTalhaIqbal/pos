@@ -91,12 +91,12 @@ export async function POST(request) {
   try {
     await connectDB();
 
-    // Work period open na ho to order punch nahi hoga
+    // Orders cannot be placed unless a work period is open
     const workPeriod = await WorkPeriod.findOne({ status: 'open' }).select('_id').lean();
     if (!workPeriod) {
       return NextResponse.json(
         {
-          error: 'Work period start nahi hai. Pehle work period start karo.',
+          error: 'No work period is open. Please start a work period first.',
           code: 'NO_WORK_PERIOD'
         },
         { status: 403 }
@@ -112,7 +112,7 @@ export async function POST(request) {
     const order = new Order({
       ...orderData,
       orderNumber,
-      workPeriod: workPeriod._id // client se aaya hua workPeriod hamesha override
+      workPeriod: workPeriod._id // always override any workPeriod sent by the client
     });
 
     await order.save();

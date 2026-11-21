@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import Order from '@/models/Order';
 
 /**
- * Kisi work period ke orders ka live summary.
- * Cancelled orders sales me count nahi hote.
+ * Live summary of the orders in a work period.
+ * Cancelled orders are not counted in sales.
  */
 export async function getPeriodStats(periodId) {
   const rows = await Order.aggregate([

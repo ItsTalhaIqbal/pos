@@ -8,6 +8,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from ".
 import { Badge } from "./badge"
 import { Separator } from "./separator"
 import { cn } from "@/lib/utils"
+import { BRAND } from "@/components/work-period"
 
 function formatCurrency(amount) {
   if (typeof amount !== "number") return "-"
@@ -25,7 +26,7 @@ const OrderDetailsContent = ({order = {}}) => {
 
   const handlePrint = (type) => (e) => {
     if (e && e.preventDefault) e.preventDefault()
-    printReceipt(order, { type, paperWidthMm: 80, brand: { name: "Burger Buddies", address: "Sahiwal", phone: "0327-6589441" } })
+    printReceipt(order, { type, paperWidthMm: 80, brand: BRAND })
   }
   return (
     <DialogContent className="max-w-3xl">
@@ -99,7 +100,14 @@ const OrderDetailsContent = ({order = {}}) => {
                           <TableBody>
                             {items.map((it, idx) => (
                               <TableRow key={it.itemId ?? it.id ?? idx}>
-                                <TableCell className="max-w-[30%] truncate">{it.name}</TableCell>
+                                <TableCell className="max-w-[40%]">
+                                  <div className="truncate">{it.name}</div>
+                                  {it.toppings?.length > 0 && (
+                                    <div className="text-xs text-muted-foreground whitespace-normal">
+                                      + {it.toppings.map((t) => t.name).join(", ")}
+                                    </div>
+                                  )}
+                                </TableCell>
                                 <TableCell>{it.quantity}</TableCell>
                                 <TableCell>{formatCurrency(it.price ?? 0)}</TableCell>
                                 <TableCell>{formatCurrency((it.price ?? 0) * (it.quantity ?? 0))}</TableCell>
